@@ -1,0 +1,22 @@
+# Build artifacts
+/build/
+minerd
+minerd-*
+
+# Data and logs
+/data/
+*.db
+*.log
+
+# Environment files
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
