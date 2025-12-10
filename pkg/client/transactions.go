@@ -111,7 +111,7 @@ func (c *ChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonc
 		Owner:           fromAddr.String(),
 	}
 
-	txHash, err := c.buildSignAndBroadcast(ctx, fromAddr, msg, 200000)
+	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, 200000)
 	if err != nil {
 		return err
 	}

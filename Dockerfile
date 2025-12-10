@@ -29,7 +29,7 @@ RUN --mount=type=secret,id=GH_PAT \
 COPY . .
 
 # Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o /build/minerd ./cmd
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o /build/aultmined ./cmd
 
 # Final stage
 FROM alpine:latest
@@ -48,7 +48,7 @@ RUN addgroup -g 1000 miner && \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /build/minerd /app/minerd
+COPY --from=builder /build/aultmined /app/aultmined
 
 # Create directories for data
 RUN mkdir -p /app/data && \
@@ -61,7 +61,7 @@ USER miner
 EXPOSE 8080
 
 # Set entrypoint to the miner binary
-ENTRYPOINT ["/app/minerd"]
+ENTRYPOINT ["/app/aultmined"]
 
 # Default command - mine with non-interactive mode
 CMD ["mine", "--yes"]

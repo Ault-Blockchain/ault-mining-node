@@ -71,15 +71,15 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
           CC: ${{ matrix.cc }}
         run: |
-          BINARY_NAME="minerd-${{ matrix.goos }}-${{ matrix.goarch }}"
+          BINARY_NAME="aultmined-${{ matrix.goos }}-${{ matrix.goarch }}"
           go build -trimpath -ldflags="-s -w" -o ${BINARY_NAME} ./cmd
           chmod +x ${BINARY_NAME}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: minerd-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: minerd-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: aultmined-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: aultmined-${{ matrix.goos }}-${{ matrix.goarch }}
           retention-days: 7
 
   release:
@@ -96,14 +96,14 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum minerd-* > checksums.txt
+          sha256sum aultmined-* > checksums.txt
           cat checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/minerd-*
+            artifacts/aultmined-*
             artifacts/checksums.txt
           generate_release_notes: true
           draft: false
@@ -156,8 +156,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ steps.meta.outputs.owner }}/minerd:${{ steps.meta.outputs.version }}
-            ghcr.io/${{ steps.meta.outputs.owner }}/minerd:latest
+            ghcr.io/${{ steps.meta.outputs.owner }}/aultmined:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/aultmined:latest
           build-args: |
             GOPRIVATE=github.com/Ault-Blockchain/*
           secrets: |

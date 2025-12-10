@@ -1,7 +1,7 @@
 .PHONY: all build install clean test run docker-build docker-run help
 
 # Binary name
-BINARY_NAME=minerd
+BINARY_NAME=aultmined
 DOCKER_IMAGE=ault-miner
 
 # Go parameters

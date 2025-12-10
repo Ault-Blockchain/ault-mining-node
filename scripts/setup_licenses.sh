@@ -76,7 +76,7 @@ for i in $(seq 0 $((OPERATOR_COUNT-1))); do
   EXISTING_VRF="${VRF_KEYS[$i]:-}"
 
   # Derive operator address from private key
-  OPERATOR_ADDR=$(MINER_OPERATOR_KEY="$OP_KEY" minerd address 2>/dev/null || echo "")
+  OPERATOR_ADDR=$(MINER_OPERATOR_KEY="$OP_KEY" aultmined address 2>/dev/null || echo "")
 
   if [ -z "$OPERATOR_ADDR" ]; then
     echo "Error: Failed to derive address for operator $((i+1))"
@@ -101,7 +101,7 @@ for i in $(seq 0 $((OPERATOR_COUNT-1))); do
     else
       # Generate new VRF key
       echo "Generating new VRF key..."
-      VRF_OUTPUT=$(minerd vrfkeygen)
+      VRF_OUTPUT=$(aultmined vrfkeygen)
       VRF_PRIVATE_KEY=$(echo "$VRF_OUTPUT" | grep -i "private" | awk '{print $NF}')
       VRF_PUBLIC_KEY=$(echo "$VRF_OUTPUT" | grep -i "public" | awk '{print $NF}')
 
@@ -122,7 +122,7 @@ for i in $(seq 0 $((OPERATOR_COUNT-1))); do
     CHAIN_GRPC="$CHAIN_GRPC" \
     CHAIN_RPC="$CHAIN_RPC" \
     CHAIN_ID="$CHAIN_ID" \
-    minerd set-key
+    aultmined set-key
 
     echo "VRF key registered"
   else

@@ -23,7 +23,7 @@ make build
 ### 2. Generate VRF Key
 
 ```bash
-./minerd vrfkeygen
+./aultmined vrfkeygen
 ```
 
 ### 3. Configure
@@ -38,23 +38,23 @@ export MINER_RPC_ENDPOINT="http://localhost:26657"
 ### 4. Register VRF Key
 
 ```bash
-./minerd set-key
+./aultmined set-key
 ```
 
 ### 5. Start Mining
 
 ```bash
-./minerd mine --yes
+./aultmined mine --yes
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `minerd vrfkeygen` | Generate new Ed25519 VRF keypair |
-| `minerd set-key` | Register VRF public key on-chain |
-| `minerd mine` | Start mining with all detected licenses |
-| `minerd mine --yes` | Start mining without confirmation prompt |
+| `aultminedvrfkeygen` | Generate new Ed25519 VRF keypair |
+| `aultminedset-key` | Register VRF public key on-chain |
+| `aultminedmine` | Start mining with all detected licenses |
+| `aultminedmine --yes` | Start mining without confirmation prompt |
 
 ## Environment Variables
 
@@ -93,7 +93,7 @@ aultd tx miner register-operator 10 --from <your-key>
 aultd tx miner delegate-mining <operator-addr> <license-ids...> --from <license-owner>
 
 # Start mining - automatically detects delegated licenses
-minerd mine --yes
+aultminedmine --yes
 ```
 
 ## License

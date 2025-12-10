@@ -21,7 +21,7 @@ make install
 Generate Ed25519 keypair for VRF (Verifiable Random Function) proof generation.
 
 ```bash
-minerd vrfkeygen
+aultmined vrfkeygen
 ```
 
 Output:
@@ -52,7 +52,7 @@ MINER_LOG_LEVEL=info
 Submit VRF public key to chain. Required before mining - chain verifies proofs against this key.
 
 ```bash
-minerd set-key
+aultmined set-key
 ```
 
 ### 4. Start Mining
@@ -60,12 +60,12 @@ minerd set-key
 Begin continuous mining. Auto-detects owned and delegated licenses.
 
 ```bash
-minerd mine --yes
+aultmined mine --yes
 ```
 
 ## Systemd Service Example
 
-`/etc/systemd/system/minerd.service`:
+`/etc/systemd/system/aultmined.service`:
 
 ```ini
 [Unit]
@@ -75,7 +75,7 @@ After=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/path/to/.env
-ExecStart=/usr/local/bin/minerd mine --yes
+ExecStart=/usr/local/bin/aultmined mine --yes
 Restart=always
 RestartSec=10
 
@@ -85,9 +85,9 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable minerd
-sudo systemctl start minerd
-journalctl -u minerd -f
+sudo systemctl enable aultmined
+sudo systemctl start aultmined
+journalctl -u aultmined -f
 ```
 
 ## Docker Example

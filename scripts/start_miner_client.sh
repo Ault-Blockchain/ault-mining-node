@@ -22,7 +22,7 @@ else
 fi
 
 VERSION=${1:-latest}
-IMAGE="${DOCKER_IMAGE:-ghcr.io/ault-blockchain/minerd}"
+IMAGE="${DOCKER_IMAGE:-ghcr.io/ault-blockchain/aultmined}"
 
 # Parse arrays (comma-separated)
 IFS=',' read -ra OP_KEYS <<< "$MINER_OPERATOR_KEYS"

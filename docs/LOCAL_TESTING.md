@@ -34,7 +34,7 @@ make build
 ### 3. Generate VRF Key
 
 ```bash
-./minerd vrfkeygen
+./aultmined vrfkeygen
 ```
 
 Copy the private key for the next step.
@@ -69,13 +69,13 @@ aultd q license owned-by $(aultd keys show dev0 -a --keyring-backend test)
 ### 6. Register VRF Key
 
 ```bash
-./minerd set-key
+./aultmined set-key
 ```
 
 ### 7. Start Mining
 
 ```bash
-./minerd mine --yes
+./aultmined mine --yes
 ```
 
 ## Test Scenarios
@@ -88,7 +88,7 @@ aultd q license owned-by $(aultd keys show dev0 -a --keyring-backend test)
 
 # Terminal 2: Start miner
 cd miner
-./minerd mine --yes
+./aultmined mine --yes
 ```
 
 Wait for epoch transitions and check for wins.
@@ -98,7 +98,7 @@ Wait for epoch transitions and check for wins.
 ```bash
 # Setup operator (dev0)
 export MINER_OPERATOR_KEY=$(aultd keys export dev0 --unsafe --unarmored-hex --keyring-backend test 2>/dev/null)
-./minerd vrfkeygen
+./aultmined vrfkeygen
 # Set MINER_VRF_KEY from output
 
 # Register as operator
@@ -107,7 +107,7 @@ aultd tx miner register-operator 10 \
   --gas=200000 --gas-prices=10000000aault -y
 
 # Register VRF key
-./minerd set-key
+./aultmined set-key
 
 # Mint licenses to dev1
 for i in {1..3}; do
@@ -124,14 +124,14 @@ aultd tx miner delegate-mining $OPERATOR 1 2 3 \
   --gas=200000 --gas-prices=10000000aault -y
 
 # Start mining (will mine delegated licenses)
-./minerd mine --yes
+./aultmined mine --yes
 ```
 
 ### Scenario 3: API Testing
 
 ```bash
 # Start miner
-./minerd mine --yes &
+./aultmined mine --yes &
 
 # Wait for startup
 sleep 5
@@ -211,7 +211,7 @@ export MINER_OPERATOR_KEY=$(aultd keys export dev0 --unsafe --unarmored-hex --ke
 ### "VRF key not registered on chain"
 
 ```bash
-./minerd set-key
+./aultmined set-key
 ```
 
 ### "No licenses found"

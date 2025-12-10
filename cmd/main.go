@@ -26,7 +26,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "minerd",
+	Use:   "aultmined",
 	Short: "Ault mining client",
 	Long:  `A mining client for the Ault x/miner module that performs VRF-based mining with micro proof-of-work.`,
 }
@@ -58,9 +58,9 @@ The output includes:
 - Public key (32 bytes hex) - Will be registered on-chain via set-key command
 
 Example:
-  minerd keygen
+  aultmined keygen
   export MINER_VRF_KEY="<private-key-hex>"
-  minerd set-key`,
+  aultmined set-key`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Generate new Ed25519 VRF keypair
 			privKey, err := ecvrf.GenerateKey(rand.Reader)
@@ -94,10 +94,10 @@ Example:
 			fmt.Printf("   export MINER_VRF_KEY=\"%s\"\n", privKeyHex)
 			fmt.Println()
 			fmt.Println("2. Register the public key on-chain:")
-			fmt.Println("   minerd set-key")
+			fmt.Println("   aultmined set-key")
 			fmt.Println()
 			fmt.Println("3. Start mining:")
-			fmt.Println("   minerd mine --yes")
+			fmt.Println("   aultmined mine --yes")
 			fmt.Println()
 			fmt.Println("IMPORTANT: Keep your private key secure!")
 
@@ -186,10 +186,10 @@ func mineCmd() *cobra.Command {
 			ownerAddr := manager.GetOwnerAddr().String()
 			keyInfo, err := chainClient.GetOwnerKeyInfo(context.Background(), ownerAddr)
 			if err != nil || keyInfo == nil || len(keyInfo.VrfPubkey) == 0 {
-				return fmt.Errorf("VRF key not registered on chain. Run: ./minerd set-key")
+				return fmt.Errorf("VRF key not registered on chain. Run: ./aultmined set-key")
 			}
 			if !bytes.Equal(keyInfo.VrfPubkey, manager.GetVRFPubKey()) {
-				return fmt.Errorf("local VRF key does not match chain key. Run: ./minerd set-key")
+				return fmt.Errorf("local VRF key does not match chain key. Run: ./aultmined set-key")
 			}
 			log.Printf("VRF key verified (nonce: %d)", keyInfo.Nonce)
 

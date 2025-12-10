@@ -301,7 +301,7 @@ func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uin
 	y, proof, err := GenerateVRFProof(m.vrfPrivKey, vrfMsg)
 	if err != nil {
 		log.Printf("License %d: VRF proof generation failed: %v", licenseID, err)
-		log.Printf("💡 This may indicate a corrupted VRF key. Try regenerating with: ./minerd keygen")
+		log.Printf("💡 This may indicate a corrupted VRF key. Try regenerating with: ./aultmined keygen")
 		return nil
 	}
 	metricVRFDuration.Observe(time.Since(vrfStart).Seconds())
