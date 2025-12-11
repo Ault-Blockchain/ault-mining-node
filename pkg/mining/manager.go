@@ -240,10 +240,26 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		workResults = append(workResults, *result)
 	}
 
-	// If we have any wins, submit them as a batch
+	// If we have any wins, submit them (respecting batch size config)
 	if len(workResults) > 0 {
-		log.Printf("🎯 Total wins: %d licenses. Submitting batch...", len(workResults))
-		m.submitBatchWork(ctx, workResults)
+		batchSize := config.Get().BatchSize
+		if batchSize <= 0 || batchSize >= len(workResults) {
+			// Submit all at once
+			log.Printf("🎯 Total wins: %d licenses. Submitting batch...", len(workResults))
+			m.submitBatchWork(ctx, workResults)
+		} else {
+			// Split into batches
+			log.Printf("🎯 Total wins: %d licenses. Submitting in batches of %d...", len(workResults), batchSize)
+			for i := 0; i < len(workResults); i += batchSize {
+				end := i + batchSize
+				if end > len(workResults) {
+					end = len(workResults)
+				}
+				batch := workResults[i:end]
+				log.Printf("📦 Submitting batch %d/%d (%d submissions)...", (i/batchSize)+1, (len(workResults)+batchSize-1)/batchSize, len(batch))
+				m.submitBatchWork(ctx, batch)
+			}
+		}
 	}
 
 	// Update last processed epoch (in-memory and DB)

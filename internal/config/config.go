@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -13,6 +14,7 @@ const (
 	EnvChainRPC    = "CHAIN_RPC"
 	EnvChainID     = "CHAIN_ID"
 	EnvAPIPort     = "MINER_API_PORT"
+	EnvBatchSize   = "MINER_BATCH_SIZE"
 )
 
 // Default values
@@ -21,6 +23,7 @@ const (
 	DefaultRPCEndpoint  = "tcp://localhost:26657"
 	DefaultChainID      = "ault_4400-1"
 	DefaultAPIPort      = "8080"
+	DefaultBatchSize    = 100 // Max submissions per batch (0 = unlimited)
 )
 
 // Config holds all miner configuration values
@@ -31,6 +34,7 @@ type Config struct {
 	OperatorKey  string
 	VRFKey       string
 	APIPort      string
+	BatchSize    int // Max submissions per batch (0 = unlimited)
 }
 
 var (
@@ -41,6 +45,13 @@ var (
 // Load initializes configuration from environment variables.
 func Load() {
 	cfgOnce.Do(func() {
+		batchSize := DefaultBatchSize
+		if v := os.Getenv(EnvBatchSize); v != "" {
+			if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+				batchSize = parsed
+			}
+		}
+
 		cfg = &Config{
 			GRPCEndpoint: getEnvOrDefault(EnvChainGRPC, DefaultGRPCEndpoint),
 			RPCEndpoint:  getEnvOrDefault(EnvChainRPC, DefaultRPCEndpoint),
@@ -48,6 +59,7 @@ func Load() {
 			OperatorKey:  os.Getenv(EnvOperatorKey),
 			VRFKey:       os.Getenv(EnvVRFKey),
 			APIPort:      getEnvOrDefault(EnvAPIPort, DefaultAPIPort),
+			BatchSize:    batchSize,
 		}
 	})
 }

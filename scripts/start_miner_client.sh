@@ -76,6 +76,7 @@ for i in $(seq 1 $COUNT); do
     -e CHAIN_RPC="${CHAIN_RPC}" \
     -e CHAIN_ID="${CHAIN_ID}" \
     -e MINER_API_PORT=8080 \
+    -e MINER_BATCH_SIZE="${MINER_BATCH_SIZE:-100}" \
     -p "${PORT}:8080" \
     -v "miner${i}_data:/app/data" \
     "${IMAGE}:${VERSION}" \
