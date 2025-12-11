@@ -441,8 +441,14 @@ func (c *ChainClient) GetFeeGrantAllowance(ctx context.Context) (*feegrant.Query
 // HasSufficientFeeGrant checks if operator has a valid feegrant allowance
 func (c *ChainClient) HasSufficientFeeGrant(ctx context.Context) bool {
 	resp, err := c.GetFeeGrantAllowance(ctx)
-	if err != nil || resp == nil || resp.Allowance == nil {
+	if err != nil {
+		log.Printf("feegrant check failed: %v (granter=%s, grantee=%s)", err, c.GetFeeGranter().String(), c.address.String())
 		return false
 	}
+	if resp == nil || resp.Allowance == nil {
+		log.Printf("feegrant not found (granter=%s, grantee=%s)", c.GetFeeGranter().String(), c.address.String())
+		return false
+	}
+	log.Printf("feegrant available (granter=%s, grantee=%s)", c.GetFeeGranter().String(), c.address.String())
 	return true
 }
