@@ -203,7 +203,7 @@ require (
 )
 
 replace (
-	github.com/Ault-Blockchain/ault => github.com/Ault-Blockchain/ault v0.0.8-0.20251209060102-fae125b6d5b4
+	github.com/Ault-Blockchain/ault => github.com/Ault-Blockchain/ault v0.0.9
 	github.com/cometbft/cometbft => github.com/Ault-Blockchain/cometbft v0.38.19-ault-0
 	github.com/cosmos/cosmos-sdk => github.com/Ault-Blockchain/cosmos-sdk v0.53.5-ault-0
 	github.com/cosmos/evm => github.com/Ault-Blockchain/evm v0.5.1-ault-0
