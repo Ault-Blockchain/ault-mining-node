@@ -235,3 +235,6 @@ for op_idx in $(seq 0 $((OPERATOR_COUNT-1))); do
 done
 echo ""
 echo "Note: Delegations will be active from the next epoch"
+echo ""
+echo "Next step:"
+echo "  Run ./start_miner_client.sh to start mining"

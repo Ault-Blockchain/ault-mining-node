@@ -44,7 +44,15 @@ This script uses hardcoded mnemonics for:
 - 4 minters (2,500 licenses each)
 - 10 license holders (1,000 licenses each)
 
-### 3. Delegate Licenses
+### 3. Setup VRF Key
+
+Generate and register VRF keys for 4 operators.
+
+```bash
+./setup_vrf_key.sh
+```
+
+### 4. Delegate Licenses
 
 Delegate licenses from the 10 license holders to 4 operators.
 
@@ -56,14 +64,6 @@ This script uses hardcoded mnemonics for:
 
 - 10 license holders (each delegates 250 licenses per operator)
 - 4 operators (2,500 licenses each = 250 × 10)
-
-### 4. Setup VRF Key
-
-Generate and register VRF keys for 4 operators.
-
-```bash
-./setup_vrf_key.sh
-```
 
 This script uses hardcoded operator mnemonics and will:
 

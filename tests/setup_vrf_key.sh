@@ -197,3 +197,7 @@ for i in $(seq 0 $((OPERATOR_COUNT-1))); do
   echo "    VRF Private: ${VRF_PRIVATE_KEYS[$i]}"
   echo "    VRF Public:  ${VRF_PUBLIC_KEYS[$i]}"
 done
+echo ""
+echo "Next steps:"
+echo "  1. Run ./delegate_licenses.sh to delegate licenses to operators"
+echo "  2. Run ./start_miner_client.sh to start mining"
