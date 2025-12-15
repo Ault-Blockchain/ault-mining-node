@@ -1,11 +1,14 @@
 #!/bin/bash
 set -e
 
-# Usage: ./setup_vrf_key.sh [operator_private_key]
-#    Single key: ./setup_vrf_key.sh <operator_private_key_hex>
-#    Multiple keys: Set MINER_OPERATOR_KEYS in .env (comma-separated)
+# Usage: ./setup_vrf_key.sh
+#
+# Generates and registers VRF keys for 4 operators using hardcoded mnemonics
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KEYRING_BACKEND="test"
+KEYRING_DIR="${HOME}/.aultd"
+KEYRING_PASS="testpass"
 
 # Load environment if exists (for chain config)
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -25,28 +28,52 @@ if ! command -v docker &> /dev/null; then
   exit 1
 fi
 
-# Set chain defaults if not provided
+# Set chain defaults
 CHAIN_GRPC="${CHAIN_GRPC:-localhost:9090}"
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
+FEEGRANT_MODULE_ADDR="ault140h2ttm4yx8tlxeyg3lh8u787lqzrk28gpqkvq"
 
-# Determine operator keys to process
-if [ -n "$1" ]; then
-  # Single key from argument
-  OPERATOR_KEYS_ARRAY=("$1")
-elif [ -n "$MINER_OPERATOR_KEYS" ]; then
-  # Multiple keys from .env
-  IFS=',' read -ra OPERATOR_KEYS_ARRAY <<< "$MINER_OPERATOR_KEYS"
-else
-  echo "Error: Operator private key is required"
-  echo ""
-  echo "Usage:"
-  echo "  Single key:    ./setup_vrf_key.sh <operator_private_key_hex>"
-  echo "  Multiple keys: Set MINER_OPERATOR_KEYS in .env (comma-separated)"
-  exit 1
+# For Docker: convert localhost to host.docker.internal on macOS
+DOCKER_CHAIN_GRPC="$CHAIN_GRPC"
+DOCKER_CHAIN_RPC="$CHAIN_RPC"
+if [[ "$(uname)" == "Darwin" ]]; then
+  DOCKER_CHAIN_GRPC="${CHAIN_GRPC//localhost/host.docker.internal}"
+  DOCKER_CHAIN_RPC="${CHAIN_RPC//localhost/host.docker.internal}"
 fi
 
-OPERATOR_COUNT=${#OPERATOR_KEYS_ARRAY[@]}
+# Hardcoded operator mnemonics
+OPERATOR_MNEMONICS=(
+  "vicious strike position case imitate march observe seat earth unknown raise weasel left ahead offer museum come rose print stuff fire club coral sweet"
+  "almost cart flee render myth foil soap burden vintage decade name focus local clean sheriff easy avoid pottery slab hollow width income potato unveil"
+  "secret hair group relief what result obvious glare tobacco maze shock fire egg chair glare fee play bone fan visit motion valve easy session"
+  "shock useless season parrot polar thunder lyrics mutual chapter oak goose access category elite bracket mystery symbol reason above bubble forget spell garment fruit"
+)
+OPERATOR_COUNT=${#OPERATOR_MNEMONICS[@]}
+
+# Common keyring flags
+KEYRING_FLAGS="--keyring-backend $KEYRING_BACKEND --home $KEYRING_DIR"
+
+# Derive operator private keys from mnemonics
+echo "Deriving operator keys from mnemonics..."
+declare -a OPERATOR_KEYS_ARRAY=()
+for i in $(seq 0 $((OPERATOR_COUNT-1))); do
+  MNEMONIC="${OPERATOR_MNEMONICS[$i]}"
+  KEY_NAME="operator$i"
+
+  printf '%s\n%s\n' "$KEYRING_PASS" "$KEYRING_PASS" | aultd keys delete $KEY_NAME $KEYRING_FLAGS -y 2>/dev/null || true
+  echo "$MNEMONIC" | aultd keys add $KEY_NAME --recover $KEYRING_FLAGS 2>/dev/null
+
+  OPERATOR_KEY=$(printf '%s\n' "$KEYRING_PASS" | aultd keys unsafe-export-eth-key $KEY_NAME $KEYRING_FLAGS 2>/dev/null)
+  if [ -z "$OPERATOR_KEY" ]; then
+    echo "Error: Failed to derive key for operator$i"
+    exit 1
+  fi
+
+  OPERATOR_KEYS_ARRAY+=("$OPERATOR_KEY")
+  echo "  Operator $i key derived"
+done
+echo ""
 
 echo "=== VRF Key Setup ==="
 echo "Chain ID: $CHAIN_ID"
@@ -90,8 +117,8 @@ for i in $(seq 0 $((OPERATOR_COUNT-1))); do
   SET_KEY_OUTPUT=$(docker run --rm --network host \
     -e MINER_OPERATOR_KEY="$OPERATOR_KEY" \
     -e MINER_VRF_KEY="$VRF_PRIVATE_KEY" \
-    -e CHAIN_GRPC="$CHAIN_GRPC" \
-    -e CHAIN_RPC="$CHAIN_RPC" \
+    -e CHAIN_GRPC="$DOCKER_CHAIN_GRPC" \
+    -e CHAIN_RPC="$DOCKER_CHAIN_RPC" \
     -e CHAIN_ID="$CHAIN_ID" \
     "${IMAGE}:${VERSION}" set-key 2>&1) || true
 
