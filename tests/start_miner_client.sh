@@ -35,14 +35,6 @@ CHAIN_GRPC="${CHAIN_GRPC:-localhost:9090}"
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
 
-# For Docker: convert localhost to host.docker.internal on macOS
-DOCKER_CHAIN_GRPC="$CHAIN_GRPC"
-DOCKER_CHAIN_RPC="$CHAIN_RPC"
-if [[ "$(uname)" == "Darwin" ]]; then
-  DOCKER_CHAIN_GRPC="${CHAIN_GRPC//localhost/host.docker.internal}"
-  DOCKER_CHAIN_RPC="${CHAIN_RPC//localhost/host.docker.internal}"
-fi
-
 # Hardcoded operator mnemonics
 OPERATOR_MNEMONICS=(
   "vicious strike position case imitate march observe seat earth unknown raise weasel left ahead offer museum come rose print stuff fire club coral sweet"
@@ -112,23 +104,26 @@ done
 
 echo ""
 
+# Base port for API (default: 8079, so miner-1 -> 8080, miner-2 -> 8081, etc.)
+BASE_PORT="${MINER_BASE_PORT:-8079}"
+
 # Start miners with individual keys injected
 for i in $(seq 1 $COUNT); do
   idx=$((i-1))
-  PORT=$((8079+i))
+  PORT=$((BASE_PORT+i))
 
   echo "Starting miner-$i (port: $PORT)..."
   docker run -d \
     --name "miner-$i" \
     --restart unless-stopped \
+    --network host \
     -e MINER_OPERATOR_KEY="${OP_KEYS[$idx]}" \
     -e MINER_VRF_KEY="${VRF_KEYS[$idx]}" \
-    -e CHAIN_GRPC="${DOCKER_CHAIN_GRPC}" \
-    -e CHAIN_RPC="${DOCKER_CHAIN_RPC}" \
+    -e CHAIN_GRPC="${CHAIN_GRPC}" \
+    -e CHAIN_RPC="${CHAIN_RPC}" \
     -e CHAIN_ID="${CHAIN_ID}" \
-    -e MINER_API_PORT=8080 \
+    -e MINER_API_PORT="${PORT}" \
     -e MINER_BATCH_SIZE="${MINER_BATCH_SIZE:-100}" \
-    -p "${PORT}:8080" \
     -v "miner${i}_data:/app/data" \
     "${IMAGE}:${VERSION}" \
     mine --yes

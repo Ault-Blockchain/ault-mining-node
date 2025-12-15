@@ -34,14 +34,6 @@ CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
 FEEGRANT_MODULE_ADDR="ault140h2ttm4yx8tlxeyg3lh8u787lqzrk28gpqkvq"
 
-# For Docker: convert localhost to host.docker.internal on macOS
-DOCKER_CHAIN_GRPC="$CHAIN_GRPC"
-DOCKER_CHAIN_RPC="$CHAIN_RPC"
-if [[ "$(uname)" == "Darwin" ]]; then
-  DOCKER_CHAIN_GRPC="${CHAIN_GRPC//localhost/host.docker.internal}"
-  DOCKER_CHAIN_RPC="${CHAIN_RPC//localhost/host.docker.internal}"
-fi
-
 # Hardcoded operator mnemonics
 OPERATOR_MNEMONICS=(
   "vicious strike position case imitate march observe seat earth unknown raise weasel left ahead offer museum come rose print stuff fire club coral sweet"
@@ -117,8 +109,8 @@ for i in $(seq 0 $((OPERATOR_COUNT-1))); do
   SET_KEY_OUTPUT=$(docker run --rm --network host \
     -e MINER_OPERATOR_KEY="$OPERATOR_KEY" \
     -e MINER_VRF_KEY="$VRF_PRIVATE_KEY" \
-    -e CHAIN_GRPC="$DOCKER_CHAIN_GRPC" \
-    -e CHAIN_RPC="$DOCKER_CHAIN_RPC" \
+    -e CHAIN_GRPC="$CHAIN_GRPC" \
+    -e CHAIN_RPC="$CHAIN_RPC" \
     -e CHAIN_ID="$CHAIN_ID" \
     "${IMAGE}:${VERSION}" set-key 2>&1) || true
 

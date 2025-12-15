@@ -209,8 +209,8 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 	}
 
 	// Log epoch processing
-	log.Printf("Processing epoch %d (seed: %x, threshold: %x)",
-		epochInfo.Epoch, epochInfo.Seed[:8], epochInfo.Threshold[:8])
+	log.Printf("Processing epoch %d with %d licenses (seed: %x)",
+		epochInfo.Epoch, len(m.licenses), epochInfo.Seed[:8])
 
 	// Process each license in parallel and collect results
 	resultsChan := make(chan *minertypes.WorkSubmission, len(m.licenses))
@@ -260,6 +260,8 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 				m.submitBatchWork(ctx, batch)
 			}
 		}
+	} else {
+		log.Printf("No wins this epoch")
 	}
 
 	// Update last processed epoch (in-memory and DB)
@@ -271,30 +273,19 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 
 // processLicenseForBatch processes mining for a single license and returns result if won
 func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uint64, epochInfo *minertypes.QueryEpochResponse) *minertypes.WorkSubmission {
-	log.Printf("License %d: Processing for epoch %d", licenseID, epochInfo.Epoch)
-
 	// Pre-check: Query license eligibility before doing any work
 	licenseInfo, err := m.chainClient.GetLicenseMinerInfo(ctx, licenseID)
 	if err != nil {
-		log.Printf("License %d: Failed to query info: %v", licenseID, err)
-		// Continue anyway - we'll try VRF and let chain validate
-	} else {
-		vrfKeyPreview := "empty"
-		if len(licenseInfo.VrfPubkey) >= 8 {
-			vrfKeyPreview = fmt.Sprintf("%x", licenseInfo.VrfPubkey[:8])
-		}
-		log.Printf("License %d: EligibleNow=%v, LastSubmitEpoch=%d, VRFPubkey=%s",
-			licenseID, licenseInfo.EligibleNow, licenseInfo.LastSubmitEpoch, vrfKeyPreview)
-		// Check if license is eligible
-		if !licenseInfo.EligibleNow {
-			log.Printf("License %d: Not eligible (eligible_now=false)", licenseID)
-			return nil
-		}
-		// Check rate limit: already submitted this epoch
-		if licenseInfo.LastSubmitEpoch == epochInfo.Epoch {
-			log.Printf("License %d: Already submitted in epoch %d", licenseID, epochInfo.Epoch)
-			return nil
-		}
+		// Skip - license not eligible or VRF key not found
+		return nil
+	}
+	// Check if license is eligible
+	if !licenseInfo.EligibleNow {
+		return nil
+	}
+	// Check rate limit: already submitted this epoch
+	if licenseInfo.LastSubmitEpoch == epochInfo.Epoch {
+		return nil
 	}
 
 	// Get stats for this license (map is read-only after init, so safe)

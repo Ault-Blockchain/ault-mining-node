@@ -52,14 +52,6 @@ func (c *ChainClient) BatchSubmitWork(ctx context.Context, workResults []minerty
 		return "", err
 	}
 	fmt.Printf("Batch work submitted successfully! Tx: %s\n", txHash)
-	start := time.Now()
-	err = c.waitForTxConfirmation(ctx, txHash)
-	if dur := time.Since(start); dur > 0 {
-		_ = dur
-	}
-	if err != nil {
-		return txHash, err
-	}
 	return txHash, nil
 }
 
@@ -116,7 +108,42 @@ func (c *ChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonc
 		return err
 	}
 	fmt.Printf("Owner VRF key set! Tx: %s\n", txHash)
-	return c.waitForTxConfirmation(ctx, txHash)
+	return c.waitForVRFKeyRegistration(ctx, fromAddr.String(), vrfPubkey)
+}
+
+// waitForVRFKeyRegistration polls the chain to verify VRF key registration
+func (c *ChainClient) waitForVRFKeyRegistration(ctx context.Context, ownerAddr string, expectedPubkey []byte) error {
+	const (
+		pollInterval = 3 * time.Second
+		maxAttempts  = 10
+	)
+
+	for i := 0; i < maxAttempts; i++ {
+		keyInfo, err := c.GetOwnerKeyInfo(ctx, ownerAddr)
+		if err == nil && keyInfo != nil && len(keyInfo.VrfPubkey) > 0 {
+			if len(expectedPubkey) == len(keyInfo.VrfPubkey) {
+				match := true
+				for j := range expectedPubkey {
+					if expectedPubkey[j] != keyInfo.VrfPubkey[j] {
+						match = false
+						break
+					}
+				}
+				if match {
+					return nil
+				}
+			}
+		}
+
+		if i < maxAttempts-1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(pollInterval):
+			}
+		}
+	}
+	return fmt.Errorf("VRF key registration not confirmed after %d seconds", maxAttempts*int(pollInterval.Seconds()))
 }
 
 // buildSignAndBroadcast builds, signs and broadcasts a tx with one msg
