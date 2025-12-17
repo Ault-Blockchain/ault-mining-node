@@ -39,6 +39,11 @@ jobs:
             goarch: arm64
             cc: ""
             cgo: 0
+          - goos: windows
+            goarch: amd64
+            cc: x86_64-w64-mingw32-gcc
+            cgo: 1
+            ext: .exe
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,10 +64,15 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Install cross-compilation tools
-        if: matrix.goarch == 'arm64' && matrix.goos == 'linux'
+        if: (matrix.goarch == 'arm64' && matrix.goos == 'linux') || (matrix.goos == 'windows' && matrix.goarch == 'amd64')
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            sudo apt-get install -y gcc-mingw-w64-x86-64
+          fi
 
       - name: Build
         env:
@@ -71,15 +81,17 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
           CC: ${{ matrix.cc }}
         run: |
-          BINARY_NAME="aultmined-${{ matrix.goos }}-${{ matrix.goarch }}"
+          BINARY_NAME="aultmined-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
           go build -trimpath -ldflags="-s -w" -o ${BINARY_NAME} ./cmd
-          chmod +x ${BINARY_NAME}
+          if [ "${{ matrix.goos }}" != "windows" ]; then
+            chmod +x ${BINARY_NAME}
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: aultmined-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: aultmined-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: aultmined-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
           retention-days: 7
 
   release:
