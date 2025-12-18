@@ -32,7 +32,6 @@ fi
 CHAIN_GRPC="${CHAIN_GRPC:-localhost:9090}"
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
-FEEGRANT_MODULE_ADDR="ault140h2ttm4yx8tlxeyg3lh8u787lqzrk28gpqkvq"
 
 # Hardcoded operator mnemonics
 OPERATOR_MNEMONICS=(

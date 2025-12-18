@@ -20,7 +20,6 @@ import (
 	cmthttp "github.com/cometbft/cometbft/rpc/client/http"
 
 	sdkmath "cosmossdk.io/math"
-	feegrant "cosmossdk.io/x/feegrant"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -112,7 +111,6 @@ func NewChainClient() (*ChainClient, error) {
 		authClient:        authtypes.NewQueryClient(conn),
 		txClient:          txtypes.NewServiceClient(conn),
 		feemarketClient:   feemarkettypes.NewQueryClient(conn),
-		feegrantClient:    feegrant.NewQueryClient(conn),
 		grpcEndpoint:      grpcEndpoint,
 		rpcEndpoint:       rpcEndpoint,
 		chainID:           "ault_4400-1", // default, will be discovered
@@ -422,33 +420,4 @@ func isDuplicateTx(raw string) bool {
 func isOutOfGas(raw string) bool {
 	s := strings.ToLower(raw)
 	return strings.Contains(s, "out of gas") || strings.Contains(s, "insufficient gas")
-}
-
-// GetFeeGranter returns the feegrant module address
-func (c *ChainClient) GetFeeGranter() sdk.AccAddress {
-	return authtypes.NewModuleAddress(feegrant.ModuleName)
-}
-
-// GetFeeGrantAllowance queries the feegrant allowance for the operator
-func (c *ChainClient) GetFeeGrantAllowance(ctx context.Context) (*feegrant.QueryAllowanceResponse, error) {
-	granter := c.GetFeeGranter()
-	return c.feegrantClient.Allowance(ctx, &feegrant.QueryAllowanceRequest{
-		Granter: granter.String(),
-		Grantee: c.address.String(),
-	})
-}
-
-// HasSufficientFeeGrant checks if operator has a valid feegrant allowance
-func (c *ChainClient) HasSufficientFeeGrant(ctx context.Context) bool {
-	resp, err := c.GetFeeGrantAllowance(ctx)
-	if err != nil {
-		log.Printf("feegrant check failed: %v (granter=%s, grantee=%s)", err, c.GetFeeGranter().String(), c.address.String())
-		return false
-	}
-	if resp == nil || resp.Allowance == nil {
-		log.Printf("feegrant not found (granter=%s, grantee=%s)", c.GetFeeGranter().String(), c.address.String())
-		return false
-	}
-	log.Printf("feegrant available (granter=%s, grantee=%s)", c.GetFeeGranter().String(), c.address.String())
-	return true
 }

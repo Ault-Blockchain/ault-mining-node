@@ -274,19 +274,21 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 // processLicenseForBatch processes mining for a single license and returns result if won
 func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uint64, epochInfo *minertypes.QueryEpochResponse) *minertypes.WorkSubmission {
 	// Pre-check: Query license eligibility before doing any work
+	// Note: GetLicenseMinerInfo may fail for delegated licenses due to chain bug
+	// (chain looks for license owner's VRF key instead of operator's VRF key)
+	// We proceed with mining even if this check fails, letting the chain reject invalid submissions
 	licenseInfo, err := m.chainClient.GetLicenseMinerInfo(ctx, licenseID)
-	if err != nil {
-		// Skip - license not eligible or VRF key not found
-		return nil
+	if err == nil {
+		// Check if license is eligible
+		if !licenseInfo.EligibleNow {
+			return nil
+		}
+		// Check rate limit: already submitted this epoch
+		if licenseInfo.LastSubmitEpoch == epochInfo.Epoch {
+			return nil
+		}
 	}
-	// Check if license is eligible
-	if !licenseInfo.EligibleNow {
-		return nil
-	}
-	// Check rate limit: already submitted this epoch
-	if licenseInfo.LastSubmitEpoch == epochInfo.Epoch {
-		return nil
-	}
+	// If GetLicenseMinerInfo failed, proceed anyway - chain will validate on submission
 
 	// Get stats for this license (map is read-only after init, so safe)
 	stats := m.stats.LicenseStats[licenseID]

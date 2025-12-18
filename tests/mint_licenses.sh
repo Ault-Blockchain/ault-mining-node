@@ -23,7 +23,6 @@ fi
 # Set chain defaults
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
-FEEGRANT_MODULE_ADDR="${FEEGRANT_MODULE_ADDR:-ault140h2ttm4yx8tlxeyg3lh8u787lqzrk28gpqkvq}"
 
 # Configuration
 TOTAL_LICENSES=10000
@@ -154,7 +153,6 @@ for batch_start in $(seq 1 $MINT_BATCH_SIZE $TOTAL_LICENSES); do
     --chain-id "$CHAIN_ID" \
     --gas 50000000 \
     --fees 10000000000000000aault \
-    --fee-granter "$FEEGRANT_MODULE_ADDR" \
     --broadcast-mode sync \
     --yes \
     --output json 2>&1)

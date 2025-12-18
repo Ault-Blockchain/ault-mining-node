@@ -23,7 +23,6 @@ fi
 # Set chain defaults
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
-FEEGRANT_MODULE_ADDR="${FEEGRANT_MODULE_ADDR:-ault140h2ttm4yx8tlxeyg3lh8u787lqzrk28gpqkvq}"
 
 # Configuration
 DELEGATION_BATCH_SIZE=500
@@ -203,7 +202,6 @@ for holder_idx in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
         --chain-id "$CHAIN_ID" \
         --gas 10000000 \
         --fees 5000000000000000aault \
-        --fee-granter "$FEEGRANT_MODULE_ADDR" \
         --broadcast-mode sync \
         --yes \
         --output json 2>&1) || true
