@@ -7,7 +7,7 @@ require (
 	cosmossdk.io/math v1.5.3
 	github.com/Ault-Blockchain/ault v0.0.7
 	github.com/ProtonMail/go-ecvrf v0.0.1
-	github.com/cometbft/cometbft v0.38.19
+	github.com/cometbft/cometbft v0.38.20
 	github.com/cosmos/cosmos-sdk v0.53.5-0.20251030204916-768cb210885c
 	github.com/cosmos/evm v0.2.0
 	github.com/gofiber/fiber/v2 v2.52.10
@@ -30,7 +30,6 @@ require (
 	cosmossdk.io/errors v1.0.2 // indirect
 	cosmossdk.io/schema v1.1.0 // indirect
 	cosmossdk.io/store v1.1.2 // indirect
-	cosmossdk.io/x/feegrant v0.2.0 // indirect
 	cosmossdk.io/x/tx v0.14.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
@@ -203,7 +202,7 @@ require (
 )
 
 replace (
-	github.com/Ault-Blockchain/ault => github.com/Ault-Blockchain/ault v0.0.9
+	github.com/Ault-Blockchain/ault => github.com/Ault-Blockchain/ault v0.2.0
 	github.com/cometbft/cometbft => github.com/Ault-Blockchain/cometbft v0.38.19-ault-0
 	github.com/cosmos/cosmos-sdk => github.com/Ault-Blockchain/cosmos-sdk v0.53.5-ault-0
 	github.com/cosmos/evm => github.com/Ault-Blockchain/evm v0.5.1-ault-0

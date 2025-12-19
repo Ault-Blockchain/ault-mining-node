@@ -8,6 +8,7 @@ import (
 
 	tmhash "github.com/cometbft/cometbft/crypto/tmhash"
 
+	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
@@ -183,10 +184,18 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 		}
 		builder.SetGasLimit(estGas)
 
-		// Fees
-		fees, floor, err := c.computeFees(estGas)
-		if err != nil {
-			return "", err
+		// Fees - use 0 fee if free gas eligible
+		var fees sdk.Coins
+		var floor sdkmath.LegacyDec
+		if c.isFreeGasEligible(ctx, estGas) {
+			fees = sdk.NewCoins()
+			log.Printf("Using free gas (epoch < FreeMiningUntilEpoch)")
+		} else {
+			var feeErr error
+			fees, floor, feeErr = c.computeFees(estGas)
+			if feeErr != nil {
+				return "", feeErr
+			}
 		}
 		builder.SetFeeAmount(fees)
 

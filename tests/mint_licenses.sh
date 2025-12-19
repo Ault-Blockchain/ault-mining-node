@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # Usage: ./mint_licenses.sh
 #
@@ -25,9 +24,11 @@ CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
 
 # Configuration
-TOTAL_LICENSES=10000
-LICENSES_PER_MINTER=2500
-MINT_BATCH_SIZE=500
+TOTAL_LICENSES=100000
+DEFAULT_MAX_GAS_LIMIT=200000
+LICENSES_PER_MINTER=$((TOTAL_LICENSES / 4))
+MINT_BATCH_SIZE=1000
+GAS_LIMIT=$((MINT_BATCH_SIZE * DEFAULT_MAX_GAS_LIMIT))
 
 # Hardcoded minter mnemonics
 MINTER_MNEMONICS=(
@@ -151,8 +152,8 @@ for batch_start in $(seq 1 $MINT_BATCH_SIZE $TOTAL_LICENSES); do
     $KEYRING_FLAGS \
     --node "$CHAIN_RPC" \
     --chain-id "$CHAIN_ID" \
-    --gas 50000000 \
-    --fees 10000000000000000aault \
+    --gas $GAS_LIMIT \
+    --fees 0aault \
     --broadcast-mode sync \
     --yes \
     --output json 2>&1)

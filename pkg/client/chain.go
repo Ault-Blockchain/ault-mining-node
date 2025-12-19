@@ -329,6 +329,31 @@ func (c *ChainClient) computeFees(gas uint64) (sdk.Coins, sdkmath.LegacyDec, err
 	return fees, floor, nil
 }
 
+// isFreeGasEligible checks if the current epoch is eligible for free gas
+func (c *ChainClient) isFreeGasEligible(ctx context.Context, gasLimit uint64) bool {
+	params, err := c.GetParams(ctx)
+	if err != nil {
+		return false
+	}
+
+	epochResp, err := c.GetCurrentEpoch(ctx)
+	if err != nil {
+		return false
+	}
+
+	// Check if current epoch is before free mining cutoff
+	if epochResp.Epoch >= params.FreeMiningUntilEpoch {
+		return false
+	}
+
+	// Check if gas limit is within free gas limit
+	if gasLimit > params.FreeMiningMaxGasLimit {
+		return false
+	}
+
+	return true
+}
+
 // simulateGas estimates gas via Service.Simulate
 func (c *ChainClient) simulateGas(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg) (uint64, error) {
 	if err := c.refreshAccountSequence(ctx, fromAddr, false); err != nil {
