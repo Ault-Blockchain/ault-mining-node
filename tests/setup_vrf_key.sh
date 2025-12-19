@@ -1,14 +1,28 @@
 #!/bin/bash
 set -e
 
-# Usage: ./setup_vrf_key.sh
+# Usage: ./setup_vrf_key.sh [--local]
 #
 # Generates and registers VRF keys for 4 operators using hardcoded mnemonics
+#
+# Options:
+#   --local    Use local Docker image (aultmined:local) instead of remote registry
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEYRING_BACKEND="test"
 KEYRING_DIR="${HOME}/.aultd"
 KEYRING_PASS="testpass"
+
+# Parse command line arguments
+USE_LOCAL=false
+for arg in "$@"; do
+  case $arg in
+    --local)
+      USE_LOCAL=true
+      shift
+      ;;
+  esac
+done
 
 # Load environment if exists (for chain config)
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -18,8 +32,14 @@ elif [ -f ".env" ]; then
 fi
 
 # Docker image settings
-IMAGE="${DOCKER_IMAGE:-ghcr.io/ault-blockchain/aultmined}"
-VERSION="${DOCKER_VERSION:-latest}"
+if [ "$USE_LOCAL" = true ]; then
+  IMAGE="aultmined"
+  VERSION="local"
+  echo "Using local Docker image: ${IMAGE}:${VERSION}"
+else
+  IMAGE="${DOCKER_IMAGE:-ghcr.io/ault-blockchain/aultmined}"
+  VERSION="${DOCKER_VERSION:-latest}"
+fi
 
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then

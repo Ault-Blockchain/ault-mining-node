@@ -1,12 +1,31 @@
 #!/bin/bash
 set -e
 
-# Usage: ./install_mining_node.sh [version]
+# Usage: ./install_mining_node.sh [--local] [version]
 # Example: ./install_mining_node.sh latest
+# Example: ./install_mining_node.sh --local
 # Example: ./install_mining_node.sh v1.0.0
+#
+# Options:
+#   --local    Build local Docker image (aultmined:local) instead of pulling from registry
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Parse command line arguments
+USE_LOCAL=false
+VERSION=""
+for arg in "$@"; do
+  case $arg in
+    --local)
+      USE_LOCAL=true
+      ;;
+    *)
+      VERSION="$arg"
+      ;;
+  esac
+done
+VERSION=${VERSION:-latest}
 
 # Load environment if exists
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -15,7 +34,35 @@ elif [ -f ".env" ]; then
   source ".env"
 fi
 
-VERSION=${1:-latest}
+# Handle --local option: build local image
+if [ "$USE_LOCAL" = true ]; then
+  echo "=== Building Local Docker Image ==="
+  echo "Building aultmined:local from source..."
+  echo ""
+
+  cd "$PROJECT_ROOT"
+
+  # Build with GitHub PAT secret if available (required for private dependencies)
+  if [ -n "$GH_PAT" ]; then
+    echo "Using GH_PAT for private repository access..."
+    docker build --secret id=GH_PAT,env=GH_PAT -t aultmined:local .
+  else
+    echo "Warning: GH_PAT not set. Build may fail for private dependencies."
+    echo "Set GH_PAT environment variable: export GH_PAT=your_github_token"
+    echo ""
+    docker build -t aultmined:local .
+  fi
+
+  echo ""
+  echo "=== Installation Complete ==="
+  echo "Local Docker image built: aultmined:local"
+  echo ""
+  echo "Use --local flag with other scripts:"
+  echo "  ./setup_vrf_key.sh --local"
+  echo "  ./start_miner_client.sh --local"
+  exit 0
+fi
+
 IMAGE="${DOCKER_IMAGE:-ghcr.io/ault-blockchain/aultmined}"
 
 echo "=== Mining Node Installation ==="

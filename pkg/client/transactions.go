@@ -167,14 +167,35 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 	)
 
 	for attempt := 0; attempt <= txMaxRetries; attempt++ {
-		// Simulate gas for this msg and apply adjustment
-		simGas, simErr := c.simulateGas(ctx, fromAddr, msg)
-		if simErr != nil {
-			simGas = gasLimit
-		}
-		estGas := uint64(float64(simGas)*txGasAdjustment + 0.9999)
-		if estGas < gasLimit {
+		// Check free gas eligibility FIRST with original gas limit
+		// This must be done before gas adjustment to stay within FreeMiningMaxGasLimit
+		var estGas uint64
+		var fees sdk.Coins
+		var floor sdkmath.LegacyDec
+		var simGas uint64
+		useFreeGas := c.isFreeGasEligible(ctx, gasLimit)
+
+		if useFreeGas {
+			// Use original gas limit to stay within free gas limit (no 1.2x adjustment)
 			estGas = gasLimit
+			simGas = gasLimit
+			fees = sdk.NewCoins()
+		} else {
+			// Simulate gas and apply adjustment for paid transactions
+			var simErr error
+			simGas, simErr = c.simulateGas(ctx, fromAddr, msg)
+			if simErr != nil {
+				simGas = gasLimit
+			}
+			estGas = uint64(float64(simGas)*txGasAdjustment + 0.9999)
+			if estGas < gasLimit {
+				estGas = gasLimit
+			}
+			var feeErr error
+			fees, floor, feeErr = c.computeFees(estGas)
+			if feeErr != nil {
+				return "", feeErr
+			}
 		}
 
 		// Build tx fresh each attempt
@@ -183,20 +204,6 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 			return "", fmt.Errorf("failed to set msg: %w", err)
 		}
 		builder.SetGasLimit(estGas)
-
-		// Fees - use 0 fee if free gas eligible
-		var fees sdk.Coins
-		var floor sdkmath.LegacyDec
-		if c.isFreeGasEligible(ctx, estGas) {
-			fees = sdk.NewCoins()
-			log.Printf("Using free gas (epoch < FreeMiningUntilEpoch)")
-		} else {
-			var feeErr error
-			fees, floor, feeErr = c.computeFees(estGas)
-			if feeErr != nil {
-				return "", feeErr
-			}
-		}
 		builder.SetFeeAmount(fees)
 
 		// Sign using private key
@@ -220,7 +227,9 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 
 		// Concise logging of gas/fees/mode/seq
 		if attempt == 0 {
-			if !floor.IsZero() {
+			if useFreeGas {
+				log.Printf("tx gas: used=%d fee=FREE mode=%s seq=%d", estGas, mode.String(), c.nextSeq)
+			} else if !floor.IsZero() {
 				log.Printf("tx gas: sim=%d adj=%.2f used=%d fee=%s floor=%s mode=%s seq=%d", simGas, txGasAdjustment, estGas, fees.String(), floor.String(), mode.String(), c.nextSeq)
 			} else {
 				log.Printf("tx gas: sim=%d adj=%.2f used=%d fee=%s mode=%s seq=%d", simGas, txGasAdjustment, estGas, fees.String(), mode.String(), c.nextSeq)

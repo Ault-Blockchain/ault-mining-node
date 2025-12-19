@@ -113,7 +113,7 @@ func NewChainClient() (*ChainClient, error) {
 		feemarketClient:   feemarkettypes.NewQueryClient(conn),
 		grpcEndpoint:      grpcEndpoint,
 		rpcEndpoint:       rpcEndpoint,
-		chainID:           "ault_4400-1", // default, will be discovered
+		chainID:           cfg.ChainID, // from config, may be overridden by discovery
 		gasPrices:         gasPrices,
 		privKey:           privKey,
 		address:           address,
@@ -183,6 +183,7 @@ func (c *ChainClient) signTx(builder authtx.ExtensionOptionsTxBuilder, sequence 
 		PubKey:        pubKey,
 		Address:       c.address.String(),
 	}
+	log.Printf("Signing with chainID=%s accNum=%d seq=%d", c.chainID, c.accNum, sequence)
 
 	signBytes, err := authsigning.GetSignBytesAdapter(
 		context.Background(),
@@ -271,6 +272,7 @@ func (c *ChainClient) refreshAccountSequence(ctx context.Context, addr sdk.AccAd
 	}
 	onChainAccNum := accI.GetAccountNumber()
 	onChainSeq := accI.GetSequence()
+	log.Printf("Account query: addr=%s accNum=%d seq=%d", addr.String(), onChainAccNum, onChainSeq)
 
 	if !c.seqInit || force {
 		c.accNum = onChainAccNum

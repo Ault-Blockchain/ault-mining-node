@@ -21,3 +21,6 @@ aultmined-*
 .DS_Store
 Thumbs.db
 minerd
+delegation_logs
+mint_logs
+license_data/

@@ -1,12 +1,16 @@
 #!/bin/bash
 set -e
 
-# Usage: ./start_miner_client.sh [version]
+# Usage: ./start_miner_client.sh [--local] [version]
 # Example: ./start_miner_client.sh latest
+# Example: ./start_miner_client.sh --local
 # Example: ./start_miner_client.sh v1.0.0
 #
 # Starts 4 miners using hardcoded operator mnemonics
 # Port mapping: miner-1 -> 8080, miner-2 -> 8081, etc.
+#
+# Options:
+#   --local    Use local Docker image (aultmined:local) instead of remote registry
 #
 # Required .env variables:
 # - MINER_VRF_KEYS: comma-separated VRF private keys (from setup_vrf_key.sh)
@@ -15,6 +19,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEYRING_BACKEND="test"
 KEYRING_DIR="${HOME}/.aultd"
 KEYRING_PASS="testpass"
+
+# Parse command line arguments
+USE_LOCAL=false
+VERSION=""
+for arg in "$@"; do
+  case $arg in
+    --local)
+      USE_LOCAL=true
+      ;;
+    *)
+      VERSION="$arg"
+      ;;
+  esac
+done
+VERSION=${VERSION:-latest}
 
 # Load environment
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -27,8 +46,14 @@ else
   exit 1
 fi
 
-VERSION=${1:-latest}
-IMAGE="${DOCKER_IMAGE:-ghcr.io/ault-blockchain/aultmined}"
+# Docker image settings
+if [ "$USE_LOCAL" = true ]; then
+  IMAGE="aultmined"
+  VERSION="local"
+  echo "Using local Docker image: ${IMAGE}:${VERSION}"
+else
+  IMAGE="${DOCKER_IMAGE:-ghcr.io/ault-blockchain/aultmined}"
+fi
 
 # Set chain defaults
 CHAIN_GRPC="${CHAIN_GRPC:-localhost:9090}"
@@ -90,9 +115,11 @@ echo "Miner count: $COUNT"
 echo "Chain: $CHAIN_ID"
 echo ""
 
-# Always pull latest image before running
-echo "Pulling ${IMAGE}:${VERSION}..."
-docker pull "${IMAGE}:${VERSION}"
+# Pull image if not using local
+if [ "$USE_LOCAL" != "true" ]; then
+  echo "Pulling ${IMAGE}:${VERSION}..."
+  docker pull "${IMAGE}:${VERSION}"
+fi
 
 echo ""
 
