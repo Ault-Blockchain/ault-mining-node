@@ -214,9 +214,21 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		m.loadOrInitSession(ctx, epochInfo.Epoch)
 	}
 
+	// Query eligible licenses (delegated-licenses returns all minable licenses for this operator)
+	eligibleLicenses, err := m.chainClient.GetDelegatedLicenses(ctx, m.ownerAddr.String())
+	if err != nil {
+		log.Printf("Failed to query eligible licenses: %v", err)
+		return
+	}
+
+	if len(eligibleLicenses) == 0 {
+		log.Printf("No eligible licenses for epoch %d", epochInfo.Epoch)
+		return
+	}
+
 	// Log epoch processing
-	log.Printf("Processing epoch %d with %d licenses (seed: %x)",
-		epochInfo.Epoch, len(m.licenses), epochInfo.Seed[:8])
+	log.Printf("Processing epoch %d with %d eligible licenses (seed: %x)",
+		epochInfo.Epoch, len(eligibleLicenses), epochInfo.Seed[:8])
 
 	batchSize := config.Get().BatchSize
 	if batchSize <= 0 {
@@ -224,11 +236,11 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 	}
 
 	// Process licenses in parallel and submit batches as soon as they're ready
-	resultsChan := make(chan *minertypes.WorkSubmission, len(m.licenses))
+	resultsChan := make(chan *minertypes.WorkSubmission, len(eligibleLicenses))
 	var processWg sync.WaitGroup
 
 	// Start workers to process licenses
-	for _, licenseID := range m.licenses {
+	for _, licenseID := range eligibleLicenses {
 		processWg.Add(1)
 		go func(lid uint64) {
 			defer processWg.Done()
@@ -309,22 +321,9 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 
 // processLicenseForBatch processes mining for a single license and returns result if won
 func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uint64, epochInfo *minertypes.QueryEpochResponse) *minertypes.WorkSubmission {
-	// Pre-check: Query license eligibility before doing any work
-	// Note: GetLicenseMinerInfo may fail for delegated licenses due to chain bug
-	// (chain looks for license owner's VRF key instead of operator's VRF key)
-	// We proceed with mining even if this check fails, letting the chain reject invalid submissions
-	licenseInfo, err := m.chainClient.GetLicenseMinerInfo(ctx, licenseID)
-	if err == nil {
-		// Check if license is eligible
-		if !licenseInfo.EligibleNow {
-			return nil
-		}
-		// Check rate limit: already submitted this epoch
-		if licenseInfo.LastSubmitEpoch == epochInfo.Epoch {
-			return nil
-		}
-	}
-	// If GetLicenseMinerInfo failed, proceed anyway - chain will validate on submission
+	// Skip pre-check query to reduce latency - VRF computation is fast,
+	// and chain will validate eligibility on submission anyway.
+	// This avoids N gRPC queries per epoch (where N = number of licenses).
 
 	// Get stats for this license (map is read-only after init, so safe)
 	stats := m.stats.LicenseStats[licenseID]
