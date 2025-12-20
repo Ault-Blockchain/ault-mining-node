@@ -38,19 +38,25 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 	}
 	log.Printf("Owner address: %s", ownerAddr.String())
 
-	// Always enable storage with default path
-	const storagePath = "data/miner.db"
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	db, err := stor.Open(ctx, stor.Options{
-		Path:        storagePath,
-		WAL:         true,
-		BusyTimeout: 5 * time.Second,
-	})
-	if err != nil {
-		log.Printf("Warning: failed to open storage: %v", err)
+	// Initialize storage unless disabled
+	var db *stor.DB
+	if config.Get().DisableDB {
+		log.Println("SQLite storage disabled via MINER_DISABLE_DB")
 	} else {
-		log.Printf("SQLite storage opened at %s", storagePath)
+		const storagePath = "data/miner.db"
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		var err error
+		db, err = stor.Open(ctx, stor.Options{
+			Path:        storagePath,
+			WAL:         true,
+			BusyTimeout: 5 * time.Second,
+		})
+		if err != nil {
+			log.Printf("Warning: failed to open storage: %v", err)
+		} else {
+			log.Printf("SQLite storage opened at %s", storagePath)
+		}
 	}
 
 	// Auto-detect licenses from chain (both owned and delegated)

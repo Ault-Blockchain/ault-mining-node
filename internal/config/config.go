@@ -15,6 +15,7 @@ const (
 	EnvChainID     = "CHAIN_ID"
 	EnvAPIPort     = "MINER_API_PORT"
 	EnvBatchSize   = "MINER_BATCH_SIZE"
+	EnvDisableDB   = "MINER_DISABLE_DB"
 )
 
 // Default values
@@ -34,7 +35,8 @@ type Config struct {
 	OperatorKey  string
 	VRFKey       string
 	APIPort      string
-	BatchSize    int // Max submissions per batch (0 = unlimited)
+	BatchSize    int  // Max submissions per batch (0 = unlimited)
+	DisableDB    bool // Disable SQLite storage
 }
 
 var (
@@ -52,6 +54,11 @@ func Load() {
 			}
 		}
 
+		disableDB := false
+		if v := os.Getenv(EnvDisableDB); v == "true" || v == "1" {
+			disableDB = true
+		}
+
 		cfg = &Config{
 			GRPCEndpoint: getEnvOrDefault(EnvChainGRPC, DefaultGRPCEndpoint),
 			RPCEndpoint:  getEnvOrDefault(EnvChainRPC, DefaultRPCEndpoint),
@@ -60,6 +67,7 @@ func Load() {
 			VRFKey:       os.Getenv(EnvVRFKey),
 			APIPort:      getEnvOrDefault(EnvAPIPort, DefaultAPIPort),
 			BatchSize:    batchSize,
+			DisableDB:    disableDB,
 		}
 	})
 }

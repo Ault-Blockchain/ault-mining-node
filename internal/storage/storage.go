@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -16,6 +17,7 @@ import (
 // DB wraps the GORM database connection
 type DB struct {
 	gorm *gorm.DB
+	mu   sync.Mutex
 }
 
 // Options configures database opening
@@ -58,6 +60,12 @@ func Open(ctx context.Context, opts Options) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
 	// Auto-migrate all models
 	if err := db.AutoMigrate(
 		&Submission{},
@@ -92,6 +100,8 @@ func (d *DB) EpochStatsByEpoch(ctx context.Context, epoch uint64) ([]EpochStat, 
 
 // RecordBatchSubmission records multiple submissions in a transaction
 func (d *DB) RecordBatchSubmission(ctx context.Context, epoch uint64, items []SubmissionItem, txHash string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return d.gorm.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
 
@@ -137,6 +147,8 @@ func (d *DB) RecordBatchSubmission(ctx context.Context, epoch uint64, items []Su
 
 // IncrementAttempts increments the VRF attempt counter
 func (d *DB) IncrementAttempts(ctx context.Context, epoch, licenseID uint64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	now := time.Now().UTC()
 	stat := EpochStat{
 		Epoch:       epoch,
@@ -157,6 +169,8 @@ func (d *DB) IncrementAttempts(ctx context.Context, epoch, licenseID uint64) err
 
 // IncrementWin increments the win counter
 func (d *DB) IncrementWin(ctx context.Context, epoch, licenseID uint64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	now := time.Now().UTC()
 	stat := EpochStat{
 		Epoch:       epoch,
@@ -215,6 +229,8 @@ func (d *DB) ListSubmissions(ctx context.Context, f SubmissionFilter) ([]Submiss
 
 // RecordSubmissionReward records a successful submission reward
 func (d *DB) RecordSubmissionReward(ctx context.Context, epoch, licenseID, credits uint64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	record := SubmissionReward{
 		Epoch:     epoch,
 		LicenseID: licenseID,
@@ -229,6 +245,8 @@ func (d *DB) RecordSubmissionReward(ctx context.Context, epoch, licenseID, credi
 
 // UpdateSubmissionPayout updates the payout for a submission
 func (d *DB) UpdateSubmissionPayout(ctx context.Context, epoch, licenseID uint64, payout string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	now := time.Now().UTC()
 	return d.gorm.WithContext(ctx).
 		Model(&SubmissionReward{}).
@@ -286,6 +304,8 @@ func (d *DB) GetMinerSession(ctx context.Context, ownerAddress string) (*MinerSe
 
 // CreateOrUpdateSession creates or updates a miner session
 func (d *DB) CreateOrUpdateSession(ctx context.Context, ownerAddress string, startEpoch, lastProcessedEpoch uint64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	now := time.Now().UTC()
 	session := MinerSession{
 		OwnerAddress:       ownerAddress,
@@ -305,6 +325,8 @@ func (d *DB) CreateOrUpdateSession(ctx context.Context, ownerAddress string, sta
 
 // UpdateLastProcessedEpoch updates the last processed epoch for the owner
 func (d *DB) UpdateLastProcessedEpoch(ctx context.Context, ownerAddress string, epoch uint64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return d.gorm.WithContext(ctx).
 		Model(&MinerSession{}).
 		Where("owner_address = ?", ownerAddress).

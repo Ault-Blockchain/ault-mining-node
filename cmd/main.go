@@ -131,7 +131,7 @@ func setKeyCmd() *cobra.Command {
 				return fmt.Errorf("failed to get owner address: %w", err)
 			}
 
-			// Query current nonce
+			// Query current key info
 			keyInfo, err := chainClient.GetOwnerKeyInfo(context.Background(), ownerAddr.String())
 			if err != nil && !strings.Contains(err.Error(), "not found") {
 				return fmt.Errorf("failed to query owner key info: %w", err)
@@ -139,8 +139,16 @@ func setKeyCmd() *cobra.Command {
 
 			nonce := uint64(0)
 			if keyInfo != nil && keyInfo.VrfPubkey != nil {
+				// Check if the VRF key is already set to the same value
+				if bytes.Equal(keyInfo.VrfPubkey, vrfPubKey) {
+					fmt.Printf("VRF key already registered for owner %s\n", ownerAddr.String())
+					fmt.Printf("VRF Public Key: %x\n", vrfPubKey)
+					fmt.Printf("Nonce: %d\n", keyInfo.Nonce)
+					fmt.Println("\nNo action needed - key is already set.")
+					return nil
+				}
 				nonce = keyInfo.Nonce
-				fmt.Printf("Current VRF key found with nonce %d, updating...\n", nonce)
+				fmt.Printf("Current VRF key found with nonce %d, updating to new key...\n", nonce)
 			} else {
 				fmt.Println("No existing VRF key found, setting initial key...")
 			}
