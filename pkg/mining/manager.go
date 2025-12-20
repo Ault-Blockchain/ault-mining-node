@@ -218,13 +218,20 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 	log.Printf("Processing epoch %d with %d licenses (seed: %x)",
 		epochInfo.Epoch, len(m.licenses), epochInfo.Seed[:8])
 
-	// Process each license in parallel and collect results
+	batchSize := config.Get().BatchSize
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+
+	// Process licenses in parallel and submit batches as soon as they're ready
 	resultsChan := make(chan *minertypes.WorkSubmission, len(m.licenses))
-	var wg sync.WaitGroup
+	var processWg sync.WaitGroup
+
+	// Start workers to process licenses
 	for _, licenseID := range m.licenses {
-		wg.Add(1)
+		processWg.Add(1)
 		go func(lid uint64) {
-			defer wg.Done()
+			defer processWg.Done()
 			if result := m.processLicenseForBatch(ctx, lid, epochInfo); result != nil {
 				select {
 				case resultsChan <- result:
@@ -236,36 +243,48 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 
 	// Close channel once all workers are done
 	go func() {
-		wg.Wait()
+		processWg.Wait()
 		close(resultsChan)
 	}()
 
-	// Collect all work results
-	var workResults []minertypes.WorkSubmission
+	// Collect results and submit batches immediately when batch is full
+	var currentBatch []minertypes.WorkSubmission
+	var submitWg sync.WaitGroup
+	batchNum := 0
+	totalWins := 0
+
 	for result := range resultsChan {
-		workResults = append(workResults, *result)
+		currentBatch = append(currentBatch, *result)
+		totalWins++
+
+		// When batch is full, submit immediately in parallel
+		if len(currentBatch) >= batchSize {
+			batchNum++
+			batchToSubmit := make([]minertypes.WorkSubmission, len(currentBatch))
+			copy(batchToSubmit, currentBatch)
+			currentBatch = currentBatch[:0] // Reset slice
+
+			submitWg.Add(1)
+			go func(batch []minertypes.WorkSubmission, num int) {
+				defer submitWg.Done()
+				log.Printf("📦 Submitting batch %d (%d submissions)...", num, len(batch))
+				m.submitBatchWork(ctx, batch)
+			}(batchToSubmit, batchNum)
+		}
 	}
 
-	// If we have any wins, submit them (respecting batch size config)
-	if len(workResults) > 0 {
-		batchSize := config.Get().BatchSize
-		if batchSize <= 0 || batchSize >= len(workResults) {
-			// Submit all at once
-			log.Printf("🎯 Total wins: %d licenses. Submitting batch...", len(workResults))
-			m.submitBatchWork(ctx, workResults)
-		} else {
-			// Split into batches
-			log.Printf("🎯 Total wins: %d licenses. Submitting in batches of %d...", len(workResults), batchSize)
-			for i := 0; i < len(workResults); i += batchSize {
-				end := i + batchSize
-				if end > len(workResults) {
-					end = len(workResults)
-				}
-				batch := workResults[i:end]
-				log.Printf("📦 Submitting batch %d/%d (%d submissions)...", (i/batchSize)+1, (len(workResults)+batchSize-1)/batchSize, len(batch))
-				m.submitBatchWork(ctx, batch)
-			}
-		}
+	// Submit remaining results
+	if len(currentBatch) > 0 {
+		batchNum++
+		log.Printf("📦 Submitting final batch %d (%d submissions)...", batchNum, len(currentBatch))
+		m.submitBatchWork(ctx, currentBatch)
+	}
+
+	// Wait for all submissions to complete
+	submitWg.Wait()
+
+	if totalWins > 0 {
+		log.Printf("🎯 Total wins: %d licenses in %d batch(es)", totalWins, batchNum)
 	} else {
 		log.Printf("No wins this epoch")
 	}
