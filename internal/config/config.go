@@ -24,7 +24,7 @@ const (
 	DefaultRPCEndpoint  = "tcp://localhost:26657"
 	DefaultChainID      = "ault_4400-1"
 	DefaultAPIPort      = "8080"
-	DefaultBatchSize    = 100 // Max submissions per batch (0 = unlimited)
+	DefaultBatchSize    = 1000 // Max submissions per batch (0 = unlimited)
 )
 
 // Config holds all miner configuration values

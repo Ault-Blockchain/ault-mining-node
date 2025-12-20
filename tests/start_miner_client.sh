@@ -150,7 +150,7 @@ for i in $(seq 1 $COUNT); do
     -e CHAIN_RPC="${CHAIN_RPC}" \
     -e CHAIN_ID="${CHAIN_ID}" \
     -e MINER_API_PORT="${PORT}" \
-    -e MINER_BATCH_SIZE="${MINER_BATCH_SIZE:-100}" \
+    -e MINER_BATCH_SIZE="${MINER_BATCH_SIZE:-1000}" \
     -e MINER_DISABLE_DB="true" \
     "${IMAGE}:${VERSION}" \
     mine --yes
