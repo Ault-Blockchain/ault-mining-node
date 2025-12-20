@@ -252,6 +252,7 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 	var currentBatch []minertypes.WorkSubmission
 	batchNum := 0
 	totalWins := 0
+	epochExpired := false
 
 	for result := range resultsChan {
 		currentBatch = append(currentBatch, *result)
@@ -259,6 +260,20 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 
 		// When batch is full, submit immediately
 		if len(currentBatch) >= batchSize {
+			// Check if epoch is still valid before submitting
+			if !epochExpired {
+				currentEpoch, err := m.chainClient.GetCurrentEpoch(ctx)
+				if err == nil && currentEpoch.Epoch != epochInfo.Epoch {
+					log.Printf("⏰ Epoch %d expired (current: %d), skipping remaining batches", epochInfo.Epoch, currentEpoch.Epoch)
+					epochExpired = true
+				}
+			}
+
+			if epochExpired {
+				currentBatch = currentBatch[:0] // Discard batch
+				continue
+			}
+
 			batchNum++
 			log.Printf("📦 Submitting batch %d (%d submissions)...", batchNum, len(currentBatch))
 			m.submitBatchWork(ctx, currentBatch)
@@ -266,11 +281,17 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		}
 	}
 
-	// Submit remaining results
-	if len(currentBatch) > 0 {
-		batchNum++
-		log.Printf("📦 Submitting final batch %d (%d submissions)...", batchNum, len(currentBatch))
-		m.submitBatchWork(ctx, currentBatch)
+	// Submit remaining results (if epoch not expired)
+	if len(currentBatch) > 0 && !epochExpired {
+		// Final check before last batch
+		currentEpoch, err := m.chainClient.GetCurrentEpoch(ctx)
+		if err == nil && currentEpoch.Epoch != epochInfo.Epoch {
+			log.Printf("⏰ Epoch %d expired (current: %d), skipping final batch", epochInfo.Epoch, currentEpoch.Epoch)
+		} else {
+			batchNum++
+			log.Printf("📦 Submitting final batch %d (%d submissions)...", batchNum, len(currentBatch))
+			m.submitBatchWork(ctx, currentBatch)
+		}
 	}
 
 	if totalWins > 0 {
