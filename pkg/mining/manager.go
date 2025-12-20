@@ -248,8 +248,8 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 	}()
 
 	// Collect results and submit batches immediately when batch is full
+	// Note: submissions are sequential to avoid nonce conflicts
 	var currentBatch []minertypes.WorkSubmission
-	var submitWg sync.WaitGroup
 	batchNum := 0
 	totalWins := 0
 
@@ -257,19 +257,12 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		currentBatch = append(currentBatch, *result)
 		totalWins++
 
-		// When batch is full, submit immediately in parallel
+		// When batch is full, submit immediately
 		if len(currentBatch) >= batchSize {
 			batchNum++
-			batchToSubmit := make([]minertypes.WorkSubmission, len(currentBatch))
-			copy(batchToSubmit, currentBatch)
+			log.Printf("📦 Submitting batch %d (%d submissions)...", batchNum, len(currentBatch))
+			m.submitBatchWork(ctx, currentBatch)
 			currentBatch = currentBatch[:0] // Reset slice
-
-			submitWg.Add(1)
-			go func(batch []minertypes.WorkSubmission, num int) {
-				defer submitWg.Done()
-				log.Printf("📦 Submitting batch %d (%d submissions)...", num, len(batch))
-				m.submitBatchWork(ctx, batch)
-			}(batchToSubmit, batchNum)
 		}
 	}
 
@@ -279,9 +272,6 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		log.Printf("📦 Submitting final batch %d (%d submissions)...", batchNum, len(currentBatch))
 		m.submitBatchWork(ctx, currentBatch)
 	}
-
-	// Wait for all submissions to complete
-	submitWg.Wait()
 
 	if totalWins > 0 {
 		log.Printf("🎯 Total wins: %d licenses in %d batch(es)", totalWins, batchNum)
