@@ -47,8 +47,8 @@ DEV0_KEY=$(aultd keys export dev0 --unsafe --unarmored-hex --keyring-backend tes
 
 export MINER_OPERATOR_KEY="$DEV0_KEY"
 export MINER_VRF_KEY="<paste-private-key-from-vrfkeygen>"
-export MINER_GRPC_ENDPOINT="localhost:9090"
-export MINER_RPC_ENDPOINT="http://localhost:26657"
+export CHAIN_GRPC="localhost:9090"
+export CHAIN_RPC="tcp://localhost:26657"
 ```
 
 ### 5. Mint Test Licenses
@@ -155,11 +155,12 @@ curl "http://localhost:8080/v1/rewards?license_id=1" | jq
 |----------|---------|-------------|
 | `MINER_OPERATOR_KEY` | (required) | Account private key (hex) |
 | `MINER_VRF_KEY` | (required) | VRF private key (hex) |
-| `MINER_GRPC_ENDPOINT` | `localhost:9090` | gRPC endpoint |
-| `MINER_RPC_ENDPOINT` | `http://localhost:26657` | RPC endpoint |
+| `CHAIN_GRPC` | `localhost:9090` | gRPC endpoint |
+| `CHAIN_RPC` | `tcp://localhost:26657` | RPC endpoint |
+| `CHAIN_ID` | `ault_4400-1` | Chain identifier |
 | `MINER_API_PORT` | `8080` | API server port |
-| `MINER_DB_PATH` | `./miner.db` | SQLite database path |
-| `MINER_LOG_LEVEL` | `info` | Log level |
+| `MINER_BATCH_SIZE` | `1000` | Max submissions per batch (0 = unlimited) |
+| `MINER_DISABLE_DB` | `false` | Disable SQLite storage ("true" or "1") |
 
 ## Useful Commands
 
@@ -258,6 +259,5 @@ go test -v ./pkg/mining/...
 ## Development Tips
 
 1. **Fast epoch testing**: Modify genesis params for shorter epochs
-2. **Debug logging**: `export MINER_LOG_LEVEL=debug`
-3. **Database inspection**: `sqlite3 miner.db ".tables"` and `sqlite3 miner.db "SELECT * FROM submissions;"`
-4. **API debugging**: Use `curl -v` for verbose output
+2. **Database inspection**: `sqlite3 miner.db ".tables"` and `sqlite3 miner.db "SELECT * FROM submissions;"`
+3. **API debugging**: Use `curl -v` for verbose output

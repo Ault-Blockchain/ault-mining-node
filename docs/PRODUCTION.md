@@ -38,13 +38,14 @@ MINER_OPERATOR_KEY=<your-account-private-key-hex>  # secp256k1, for signing txs
 MINER_VRF_KEY=<generated-vrf-private-key-hex>      # Ed25519, from vrfkeygen
 
 # Network
-MINER_GRPC_ENDPOINT=your-node:9090
-MINER_RPC_ENDPOINT=http://your-node:26657
+CHAIN_GRPC=your-node:9090
+CHAIN_RPC=tcp://your-node:26657
+CHAIN_ID=ault_4400-1
 
 # Optional
 MINER_API_PORT=8080
-MINER_DB_PATH=./miner.db
-MINER_LOG_LEVEL=info
+MINER_BATCH_SIZE=1000       # max submissions per batch (0 = unlimited)
+MINER_DISABLE_DB=false      # set to "true" to disable SQLite storage
 ```
 
 ### 3. Register VRF Key
