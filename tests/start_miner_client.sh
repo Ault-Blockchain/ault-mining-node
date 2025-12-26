@@ -58,7 +58,7 @@ fi
 # Set chain defaults
 CHAIN_GRPC="${CHAIN_GRPC:-localhost:9090}"
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
-CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
+CHAIN_ID="${CHAIN_ID:-ault_20904-1}"
 
 # Hardcoded operator mnemonics
 OPERATOR_MNEMONICS=(

@@ -19,6 +19,7 @@ From the project root:
 ```
 
 This starts a local test node with:
+
 - Chain ID: `ault_20904-1`
 - gRPC: `localhost:9090`
 - RPC: `localhost:26657`
@@ -151,16 +152,16 @@ curl "http://localhost:8080/v1/rewards?license_id=1" | jq
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MINER_OPERATOR_KEY` | (required) | Account private key (hex) |
-| `MINER_VRF_KEY` | (required) | VRF private key (hex) |
-| `CHAIN_GRPC` | `localhost:9090` | gRPC endpoint |
-| `CHAIN_RPC` | `tcp://localhost:26657` | RPC endpoint |
-| `CHAIN_ID` | `ault_4400-1` | Chain identifier |
-| `MINER_API_PORT` | `8080` | API server port |
-| `MINER_BATCH_SIZE` | `1000` | Max submissions per batch (0 = unlimited) |
-| `MINER_DISABLE_DB` | `false` | Disable SQLite storage ("true" or "1") |
+| Variable             | Default                 | Description                                     |
+| -------------------- | ----------------------- | ----------------------------------------------- |
+| `MINER_OPERATOR_KEY` | (required)              | Account private key (hex)                       |
+| `MINER_VRF_KEY`      | (required)              | VRF private key (hex)                           |
+| `CHAIN_GRPC`         | `localhost:9090`        | gRPC endpoint                                   |
+| `CHAIN_RPC`          | `tcp://localhost:26657` | RPC endpoint                                    |
+| `CHAIN_ID`           | `ault_20904-1`          | Chain identifier                                |
+| `MINER_API_PORT`     | `8080`                  | API server port                                 |
+| `MINER_BATCH_SIZE`   | `1000`                  | Max submissions per batch (<=0 = fallback 1000) |
+| `MINER_DISABLE_DB`   | `false`                 | Disable SQLite storage ("true" or "1")          |
 
 ## Useful Commands
 

@@ -30,7 +30,7 @@ fi
 
 # Set chain defaults
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
-CHAIN_ID="${CHAIN_ID:-ault_4400-1}"
+CHAIN_ID="${CHAIN_ID:-ault_20904-1}"
 
 # Configuration
 TOTAL_LICENSES=100000
