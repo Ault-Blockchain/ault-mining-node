@@ -63,18 +63,23 @@ api/server.go            # Fiber REST API server for monitoring
 ## Environment Variables
 
 Required:
+
 - `MINER_OPERATOR_KEY` - secp256k1 private key (hex) for signing transactions
 - `MINER_VRF_KEY` - Ed25519 VRF private key (hex) for mining
 
 Optional:
-- `MINER_GRPC_ENDPOINT` - default: localhost:9090
-- `MINER_RPC_ENDPOINT` - default: http://localhost:26657
+
+- `CHAIN_GRPC` - default: localhost:9090
+- `CHAIN_RPC` - default: tcp://localhost:26657
+- `CHAIN_ID` - default: ault_20904-1
 - `MINER_API_PORT` - default: 8080
-- `MINER_DB_PATH` - default: ./miner.db
+- `MINER_BATCH_SIZE` - default: 1000 (max submissions per batch, 0 = fallback 1000)
+- `MINER_DISABLE_DB` - default: false (set to "true" or "1" to disable SQLite storage)
 
 ## Dependencies
 
 The `go.mod` uses Ault-Blockchain forks of:
+
 - cosmos-sdk (v0.53.x with EVM support)
 - cometbft (tendermint consensus)
 - cosmos/evm (EVM module)

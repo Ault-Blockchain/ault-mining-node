@@ -231,9 +231,6 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		epochInfo.Epoch, len(eligibleLicenses), epochInfo.Seed[:8])
 
 	batchSize := config.Get().BatchSize
-	if batchSize <= 0 {
-		batchSize = 100
-	}
 
 	// Process licenses in parallel and submit batches as soon as they're ready
 	resultsChan := make(chan *minertypes.WorkSubmission, len(eligibleLicenses))

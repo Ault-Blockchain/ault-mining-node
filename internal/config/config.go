@@ -22,9 +22,9 @@ const (
 const (
 	DefaultGRPCEndpoint = "localhost:9090"
 	DefaultRPCEndpoint  = "tcp://localhost:26657"
-	DefaultChainID      = "ault_4400-1"
+	DefaultChainID      = "ault_20904-1"
 	DefaultAPIPort      = "8080"
-	DefaultBatchSize    = 1000 // Max submissions per batch (0 = unlimited)
+	DefaultBatchSize    = 1000 // Max submissions per batch (<=0 = fallback 1000)
 )
 
 // Config holds all miner configuration values
@@ -35,7 +35,7 @@ type Config struct {
 	OperatorKey  string
 	VRFKey       string
 	APIPort      string
-	BatchSize    int  // Max submissions per batch (0 = unlimited)
+	BatchSize    int  // Max submissions per batch (<=0 = fallback 1000)
 	DisableDB    bool // Disable SQLite storage
 }
 
@@ -49,7 +49,7 @@ func Load() {
 	cfgOnce.Do(func() {
 		batchSize := DefaultBatchSize
 		if v := os.Getenv(EnvBatchSize); v != "" {
-			if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+			if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
 				batchSize = parsed
 			}
 		}

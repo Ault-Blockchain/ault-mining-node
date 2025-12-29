@@ -90,14 +90,14 @@ Each miner runs on a separate port: miner-1 -> 8080, miner-2 -> 8081, etc.
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DOCKER_IMAGE` | Docker image name | `ghcr.io/ault-blockchain/aultmined` |
-| `CHAIN_GRPC` | Chain gRPC endpoint | `localhost:9090` |
-| `CHAIN_RPC` | Chain RPC endpoint | `tcp://localhost:26657` |
-| `CHAIN_ID` | Chain ID | `ault_4400-1` |
-| `MINER_VRF_KEYS` | VRF private keys (comma-separated) | - |
-| `MINER_BATCH_SIZE` | Max submissions per batch | `100` |
+| Variable           | Description                                     | Default                             |
+| ------------------ | ----------------------------------------------- | ----------------------------------- |
+| `DOCKER_IMAGE`     | Docker image name                               | `ghcr.io/ault-blockchain/aultmined` |
+| `CHAIN_GRPC`       | Chain gRPC endpoint                             | `localhost:9090`                    |
+| `CHAIN_RPC`        | Chain RPC endpoint                              | `tcp://localhost:26657`             |
+| `CHAIN_ID`         | Chain ID                                        | `ault_20904-1`                      |
+| `MINER_VRF_KEYS`   | VRF private keys (comma-separated)              | -                                   |
+| `MINER_BATCH_SIZE` | Max submissions per batch (<=0 = fallback 1000) | `1000`                              |
 
 ## Useful Commands
 

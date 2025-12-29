@@ -25,26 +25,33 @@ aultmined vrfkeygen
 ```
 
 Output:
+
 - **Private Key** (64 bytes hex) → Set as `MINER_VRF_KEY`
 - **Public Key** (32 bytes hex) → Registered on-chain
 
 ### 2. Environment Variables
 
-Configure miner with required keys and network endpoints.
+Configure miner with required keys and network endpoints:
 
 ```bash
 # Required
 MINER_OPERATOR_KEY=<your-account-private-key-hex>  # secp256k1, for signing txs
 MINER_VRF_KEY=<generated-vrf-private-key-hex>      # Ed25519, from vrfkeygen
 
-# Network
-MINER_GRPC_ENDPOINT=your-node:9090
-MINER_RPC_ENDPOINT=http://your-node:26657
+# Network (Testnet)
+CHAIN_GRPC=test-grpc.cloud.aultblockchain.xyz:9090
+CHAIN_RPC=https://test-rpc.cloud.aultblockchain.xyz
+CHAIN_ID=ault_10904-1
+# Network (Mainnet)
+#CHAIN_GRPC=COMING SOON
+#CHAIN_RPC=COMING SOON
+#CHAIN_ID=COMING SOON
+
 
 # Optional
 MINER_API_PORT=8080
-MINER_DB_PATH=./miner.db
-MINER_LOG_LEVEL=info
+MINER_BATCH_SIZE=1000       # max submissions per batch (<=0 = fallback 1000)
+MINER_DISABLE_DB=false      # set to "true" to disable SQLite storage
 ```
 
 ### 3. Register VRF Key
@@ -98,8 +105,9 @@ docker run -d \
   --restart unless-stopped \
   -e MINER_OPERATOR_KEY="<key>" \
   -e MINER_VRF_KEY="<vrf-key>" \
-  -e MINER_GRPC_ENDPOINT="host.docker.internal:9090" \
+  -e CHAIN_GRPC="test-grpc.cloud.aultblockchain.xyz:9090" \
+  -e CHAIN_RPC="https://test-rpc.cloud.aultblockchain.xyz" \
+  -e CHAIN_ID="ault_10904-1" \
   -p 8080:8080 \
   ault-miner
 ```
-

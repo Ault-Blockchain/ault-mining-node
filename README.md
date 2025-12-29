@@ -31,8 +31,8 @@ make build
 ```bash
 export MINER_OPERATOR_KEY="<your-account-private-key-hex>"
 export MINER_VRF_KEY="<generated-vrf-private-key-hex>"
-export MINER_GRPC_ENDPOINT="localhost:9090"
-export MINER_RPC_ENDPOINT="http://localhost:26657"
+export CHAIN_GRPC="localhost:9090"
+export CHAIN_RPC="tcp://localhost:26657"
 ```
 
 ### 4. Register VRF Key
@@ -49,23 +49,25 @@ export MINER_RPC_ENDPOINT="http://localhost:26657"
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `aultminedvrfkeygen` | Generate new Ed25519 VRF keypair |
-| `aultminedset-key` | Register VRF public key on-chain |
-| `aultminedmine` | Start mining with all detected licenses |
-| `aultminedmine --yes` | Start mining without confirmation prompt |
+| Command                | Description                              |
+| ---------------------- | ---------------------------------------- |
+| `aultmined vrfkeygen`  | Generate new Ed25519 VRF keypair         |
+| `aultmined set-key`    | Register VRF public key on-chain         |
+| `aultmined mine`       | Start mining with all detected licenses  |
+| `aultmined mine --yes` | Start mining without confirmation prompt |
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `MINER_OPERATOR_KEY` | Yes | - | Account private key (hex, secp256k1) |
-| `MINER_VRF_KEY` | Yes | - | VRF private key (hex, Ed25519) |
-| `MINER_GRPC_ENDPOINT` | No | `localhost:9090` | gRPC endpoint |
-| `MINER_RPC_ENDPOINT` | No | `http://localhost:26657` | RPC endpoint |
-| `MINER_API_PORT` | No | `8080` | REST API port |
-| `MINER_DB_PATH` | No | `./miner.db` | SQLite database path |
+| Variable             | Required | Default                 | Testnet                                     | Description                            |
+| -------------------- | -------- | ----------------------- | ------------------------------------------- | -------------------------------------- |
+| `MINER_OPERATOR_KEY` | Yes      | -                       | -                                           | Account private key (hex, secp256k1)   |
+| `MINER_VRF_KEY`      | Yes      | -                       | -                                           | VRF private key (hex, Ed25519)         |
+| `CHAIN_GRPC`         | No       | `localhost:9090`        | `test-grpc.cloud.aultblockchain.xyz:9090`   | gRPC endpoint                          |
+| `CHAIN_RPC`          | No       | `tcp://localhost:26657` | `https://test-rpc.cloud.aultblockchain.xyz` | RPC endpoint                           |
+| `CHAIN_ID`           | No       | `ault_20904-1`          | `ault_10904-1`                              | Chain identifier                       |
+| `MINER_API_PORT`     | No       | `8080`                  | -                                           | REST API port                          |
+| `MINER_BATCH_SIZE`   | No       | `1000`                  | -                                           | Max submissions per batch              |
+| `MINER_DISABLE_DB`   | No       | `false`                 | -                                           | Disable SQLite storage ("true" or "1") |
 
 ## Documentation
 
@@ -93,7 +95,7 @@ aultd tx miner register-operator 10 --from <your-key>
 aultd tx miner delegate-mining <operator-addr> <license-ids...> --from <license-owner>
 
 # Start mining - automatically detects delegated licenses
-aultminedmine --yes
+aultmined mine --yes
 ```
 
 ## License
