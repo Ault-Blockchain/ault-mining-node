@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	licensetypes "github.com/Ault-Blockchain/ault/x/license/types"
@@ -51,7 +52,7 @@ func (c *ChainClient) GetOwnerKeyInfo(ctx context.Context, ownerAddr string) (*m
 	return resp, nil
 }
 
-// GetOwnedLicenses queries all license IDs owned by an address
+// GetOwnedLicenses queries all license IDs owned by an address (parallel with concurrency limit)
 func (c *ChainClient) GetOwnedLicenses(ctx context.Context, ownerAddr string) ([]uint64, error) {
 	// First get the balance to know how many licenses to query
 	balanceResp, err := c.licenseClient.BalanceOf(ctx, &licensetypes.QueryBalanceRequest{
@@ -65,25 +66,55 @@ func (c *ChainClient) GetOwnedLicenses(ctx context.Context, ownerAddr string) ([
 		return []uint64{}, nil
 	}
 
-	// Query each license ID by index
-	licenses := make([]uint64, 0, balanceResp.Balance)
-	var failedIndices []uint64
-	for i := uint64(0); i < balanceResp.Balance; i++ {
-		tokenResp, err := c.licenseClient.TokenOfOwnerByIndex(ctx, &licensetypes.QueryTokenByOwnerIndexRequest{
-			Owner: ownerAddr,
-			Index: i,
-		})
-		if err != nil {
-			// Track failed queries but continue
-			failedIndices = append(failedIndices, i)
-			continue
-		}
-		licenses = append(licenses, tokenResp.Id)
+	// Query license IDs in parallel (max 10 concurrent)
+	type result struct {
+		index uint64
+		id    uint64
+		err   error
 	}
 
-	// If we failed to query some licenses, include warning in error
+	const maxConcurrency = 10
+	sem := make(chan struct{}, maxConcurrency)
+	resultsChan := make(chan result, balanceResp.Balance)
+
+	var wg sync.WaitGroup
+	for i := uint64(0); i < balanceResp.Balance; i++ {
+		wg.Add(1)
+		go func(idx uint64) {
+			defer wg.Done()
+			sem <- struct{}{}        // Acquire
+			defer func() { <-sem }() // Release
+
+			tokenResp, err := c.licenseClient.TokenOfOwnerByIndex(ctx, &licensetypes.QueryTokenByOwnerIndexRequest{
+				Owner: ownerAddr,
+				Index: idx,
+			})
+			if err != nil {
+				resultsChan <- result{index: idx, err: err}
+				return
+			}
+			resultsChan <- result{index: idx, id: tokenResp.Id}
+		}(i)
+	}
+
+	// Close results channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// Collect results
+	licenses := make([]uint64, 0, balanceResp.Balance)
+	var failedIndices []uint64
+	for r := range resultsChan {
+		if r.err != nil {
+			failedIndices = append(failedIndices, r.index)
+			continue
+		}
+		licenses = append(licenses, r.id)
+	}
+
 	if len(failedIndices) > 0 {
-		// Still return the licenses we could query, but with a warning
 		fmt.Printf("      ⚠️  Warning: Failed to query %d licenses at indices: %v\n", len(failedIndices), failedIndices)
 	}
 

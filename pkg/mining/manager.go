@@ -59,26 +59,38 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 		}
 	}
 
-	// Auto-detect licenses from chain (both owned and delegated)
+	// Auto-detect licenses from chain (both owned and delegated) in parallel
 	log.Printf("Auto-detecting licenses from chain...")
 
-	// Get owned licenses first (for self-mining)
 	var licenses []uint64
-	ownedLicenses, err := chainClient.GetOwnedLicenses(context.Background(), ownerAddr.String())
-	if err != nil {
-		log.Printf("Warning: Failed to query owned licenses: %v", err)
+	var ownedLicenses, delegatedLicenses []uint64
+	var ownedErr, delegatedErr error
+	var wg sync.WaitGroup
+
+	// Query owned and delegated licenses
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		ownedLicenses, ownedErr = chainClient.GetOwnedLicenses(context.Background(), ownerAddr.String())
+	}()
+	go func() {
+		defer wg.Done()
+		delegatedLicenses, delegatedErr = chainClient.GetDelegatedLicenses(context.Background(), ownerAddr.String())
+	}()
+	wg.Wait()
+
+	// Process results
+	if ownedErr != nil {
+		log.Printf("Warning: Failed to query owned licenses: %v", ownedErr)
 	} else if len(ownedLicenses) > 0 {
 		log.Printf("Auto-detected %d owned license(s)", len(ownedLicenses))
 		licenses = append(licenses, ownedLicenses...)
 	}
 
-	// Get delegated licenses (for operator mode)
-	delegatedLicenses, err := chainClient.GetDelegatedLicenses(context.Background(), ownerAddr.String())
-	if err != nil {
-		log.Printf("Warning: Failed to query delegated licenses: %v", err)
+	if delegatedErr != nil {
+		log.Printf("Warning: Failed to query delegated licenses: %v", delegatedErr)
 	} else if len(delegatedLicenses) > 0 {
 		log.Printf("Auto-detected %d delegated license(s)", len(delegatedLicenses))
-		// Add delegated licenses (no duplicates since self-delegation is not allowed)
 		licenses = append(licenses, delegatedLicenses...)
 	}
 
