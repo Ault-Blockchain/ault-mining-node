@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"strconv"
+	"sync"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/gofiber/fiber/v2"
 	fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
 
@@ -22,11 +24,16 @@ type RewardResponse struct {
 	Source       string `json:"source"` // "db" or "chain"
 }
 
+// AutoModeStateGetter is a function that returns the current auto mode state
+type AutoModeStateGetter func() interface{}
+
 type Server struct {
-	app         *fiber.App
-	db          *storage.DB
-	stats       func() interface{}
-	chainClient *client.ChainClient
+	app              *fiber.App
+	db               *storage.DB
+	stats            func() interface{}
+	chainClient      *client.ChainClient
+	autoModeState    AutoModeStateGetter
+	mu               sync.RWMutex
 }
 
 func New(db *storage.DB, statsFunc func() interface{}, chainClient *client.ChainClient) *Server {
@@ -38,15 +45,40 @@ func New(db *storage.DB, statsFunc func() interface{}, chainClient *client.Chain
 	}
 }
 
+// SetManager updates the server with the miner manager's db and stats after initialization
+func (s *Server) SetManager(db *storage.DB, statsFunc func() interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.db = db
+	s.stats = statsFunc
+}
+
+// SetAutoModeState sets the function to retrieve auto mode state
+func (s *Server) SetAutoModeState(getter AutoModeStateGetter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.autoModeState = getter
+}
+
 func (s *Server) mountRoutes() {
 	s.app.Use(fiberrecover.New())
 
 	// Health check (DB + rpc status)
 	s.app.Get("/health", func(c *fiber.Ctx) error {
-		_, dberr := s.db.RecentSubmissions(c.Context(), 1)
+		s.mu.RLock()
+		db := s.db
+		s.mu.RUnlock()
+
+		dbOK := true      // for health check: true if db disabled or working
+		dbAvailable := false // for reporting: true only if db enabled and working
+		if db != nil {
+			_, err := db.RecentSubmissions(c.Context(), 1)
+			dbAvailable = err == nil
+			dbOK = dbAvailable
+		}
 		cr := checkRpc(c.Context())
-		ok := (dberr == nil) && cr.OK
-		out := fiber.Map{"ok": ok, "db": dberr == nil, "chain": cr.OK}
+		ok := dbOK && cr.OK
+		out := fiber.Map{"ok": ok, "db": dbAvailable, "chain": cr.OK}
 		if cr.Epoch > 0 {
 			out["epoch"] = cr.Epoch
 		}
@@ -61,15 +93,26 @@ func (s *Server) mountRoutes() {
 
 	// Miner status + stats
 	v1.Get("/status", func(c *fiber.Ctx) error {
+		s.mu.RLock()
+		stats := s.stats
+		s.mu.RUnlock()
+
 		status := fiber.Map{"running": true}
-		if s.stats != nil {
-			status["stats"] = s.stats()
+		if stats != nil {
+			status["stats"] = stats()
 		}
 		return c.JSON(status)
 	})
 
 	// Submissions list
 	v1.Get("/submissions", func(c *fiber.Ctx) error {
+		s.mu.RLock()
+		db := s.db
+		s.mu.RUnlock()
+
+		if db == nil {
+			return fiber.NewError(fiber.StatusServiceUnavailable, "database disabled")
+		}
 		var f storage.SubmissionFilter
 		if v := c.Query("license_id"); v != "" {
 			if id, err := strconv.ParseUint(v, 10, 64); err == nil {
@@ -83,7 +126,7 @@ func (s *Server) mountRoutes() {
 		}
 		f.Limit = c.QueryInt("limit", 100)
 		f.Offset = c.QueryInt("offset", 0)
-		subs, err := s.db.ListSubmissions(c.Context(), f)
+		subs, err := db.ListSubmissions(c.Context(), f)
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 		}
@@ -95,6 +138,11 @@ func (s *Server) mountRoutes() {
 	//   - license_id (required): license ID to query
 	//   - source: "db" (from local DB) or "chain" (default, from chain via gRPC)
 	v1.Get("/rewards", func(c *fiber.Ctx) error {
+		s.mu.RLock()
+		db := s.db
+		stats := s.stats
+		s.mu.RUnlock()
+
 		licenseIDStr := c.Query("license_id")
 		if licenseIDStr == "" {
 			return fiber.NewError(fiber.StatusBadRequest, "license_id is required")
@@ -106,18 +154,21 @@ func (s *Server) mountRoutes() {
 
 		// Get epoch range from stats
 		var startEpoch, lastProcessedEpoch uint64
-		if s.stats != nil {
-			if stats, ok := s.stats().(mining.MiningStats); ok {
-				startEpoch = stats.StartEpoch
-				lastProcessedEpoch = stats.LastProcessedEpoch
+		if stats != nil {
+			if st, ok := stats().(mining.MiningStats); ok {
+				startEpoch = st.StartEpoch
+				lastProcessedEpoch = st.LastProcessedEpoch
 			}
 		}
 
 		source := c.Query("source", "chain")
 
 		if source == "db" {
+			if db == nil {
+				return fiber.NewError(fiber.StatusServiceUnavailable, "database disabled")
+			}
 			// Query from local DB (settled rewards only)
-			payout, credits, err := s.db.GetTotalEarnedRewards(c.Context(), licenseID)
+			payout, credits, err := db.GetTotalEarnedRewards(c.Context(), licenseID)
 			if err != nil {
 				return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 			}
@@ -147,6 +198,44 @@ func (s *Server) mountRoutes() {
 			ToEpoch:      lastProcessedEpoch,
 			Source:       "chain",
 		})
+	})
+
+	// Operator info - returns operator address and status (for auto mode / fly.io)
+	v1.Get("/operator", func(c *fiber.Ctx) error {
+		s.mu.RLock()
+		autoModeState := s.autoModeState
+		s.mu.RUnlock()
+
+		if autoModeState == nil {
+			// Not in auto mode, return basic info from chain client
+			if s.chainClient == nil {
+				return fiber.NewError(fiber.StatusServiceUnavailable, "chain client not available")
+			}
+			ownerAddr, err := s.chainClient.GetOwnerAddress()
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+			}
+			evmAddr := common.BytesToAddress([]byte(ownerAddr))
+			// Return same schema as auto mode for API consistency
+			return c.JSON(fiber.Map{
+				"operator_address": ownerAddr.String(),
+				"evm_address":      evmAddr.Hex(),
+				"vrf_pub_key_hex":  "",
+				"vrf_registered":   false,
+				"license_count":    0,
+				"licenses":         []uint64{},
+				"status":           "manual",
+				"next_step":        "",
+				"auto_mode":        false,
+			})
+		}
+
+		// Auto mode - return full state
+		state := autoModeState()
+		if state == nil {
+			return fiber.NewError(fiber.StatusServiceUnavailable, "auto mode state not available")
+		}
+		return c.JSON(state)
 	})
 }
 

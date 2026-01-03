@@ -47,10 +47,16 @@ export CHAIN_RPC="tcp://localhost:26657"
 ./aultmined mine --yes
 ```
 
+## Deploy to Fly.io
+
+For hosted deployments (including Fly.io), use the deployment guide for the full, up-to-date instructions.
+See **[Fly.io Deployment Guide](docs/FLY_DEPLOYMENT.md)**.
+
 ## Commands
 
 | Command                | Description                              |
 | ---------------------- | ---------------------------------------- |
+| `aultmined keygen`     | Generate new secp256k1 operator wallet   |
 | `aultmined vrfkeygen`  | Generate new Ed25519 VRF keypair         |
 | `aultmined set-key`    | Register VRF public key on-chain         |
 | `aultmined mine`       | Start mining with all detected licenses  |
@@ -60,18 +66,23 @@ export CHAIN_RPC="tcp://localhost:26657"
 
 | Variable             | Required | Default                 | Testnet                                     | Description                            |
 | -------------------- | -------- | ----------------------- | ------------------------------------------- | -------------------------------------- |
-| `MINER_OPERATOR_KEY` | Yes      | -                       | -                                           | Account private key (hex, secp256k1)   |
-| `MINER_VRF_KEY`      | Yes      | -                       | -                                           | VRF private key (hex, Ed25519)         |
+| `MINER_OPERATOR_KEY` | No\*     | -                       | -                                           | Account private key (hex, secp256k1)   |
+| `MINER_VRF_KEY`      | No\*     | -                       | -                                           | VRF private key (hex, Ed25519)         |
 | `CHAIN_GRPC`         | No       | `localhost:9090`        | `test-grpc.cloud.aultblockchain.xyz:9090`   | gRPC endpoint                          |
 | `CHAIN_RPC`          | No       | `tcp://localhost:26657` | `https://test-rpc.cloud.aultblockchain.xyz` | RPC endpoint                           |
 | `CHAIN_ID`           | No       | `ault_20904-1`          | `ault_10904-1`                              | Chain identifier                       |
 | `MINER_API_PORT`     | No       | `8080`                  | -                                           | REST API port                          |
 | `MINER_BATCH_SIZE`   | No       | `1000`                  | -                                           | Max submissions per batch              |
 | `MINER_DISABLE_DB`   | No       | `false`                 | -                                           | Disable SQLite storage ("true" or "1") |
+| `MINER_DATA_DIR`     | No       | `data`                  | `/data`                                     | Directory for auto-generated keys      |
+
+\*If both `MINER_OPERATOR_KEY` and `MINER_VRF_KEY` are unset, auto mode is enabled and keys are auto-generated.
 
 ## Documentation
 
+- **[Fly.io Deployment Guide](docs/FLY_DEPLOYMENT.md)** - One-click cloud deployment
 - **[Production Deployment Guide](docs/PRODUCTION.md)** - Systemd, Docker setup
+- **[Windows Mining Guide](docs/WINDOWS.md)** - Run on Windows with pre-built binaries
 - **[Local Testing Guide](docs/LOCAL_TESTING.md)** - Development and testing scenarios
 - **[REST API Reference](docs/API.md)** - Monitoring endpoints and usage
 

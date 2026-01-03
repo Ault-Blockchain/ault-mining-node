@@ -3,10 +3,10 @@ package mining
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"os"
 	"testing"
 
 	"github.com/ProtonMail/go-ecvrf/ecvrf"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zeebo/blake3"
@@ -19,8 +19,16 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
 	"github.com/Ault-Blockchain/ault/x/miner/keeper"
 )
+
+func TestMain(m *testing.M) {
+	// Set up environment for tests
+	os.Setenv("CHAIN_ID", "cosmos_262144-1")
+	config.Load()
+	os.Exit(m.Run())
+}
 
 func TestBuildOwnerPoP(t *testing.T) {
 	owner := sdk.AccAddress([]byte("test_owner__________"))
@@ -77,11 +85,7 @@ func TestBuildVRFMessage(t *testing.T) {
 		seed[i] = byte(i * 3)
 	}
 
-	// Configure chain ID
-	t.Setenv("CHAIN_CHAIN_ID", "cosmos_262144-1")
-	// viper is used by BuildVRFMessage; set it directly
-	viper.Set("chain.chain_id", "cosmos_262144-1")
-
+	// Chain ID is set in TestMain via config.Load()
 	msg := BuildVRFMessage(seed, licenseID, owner)
 
 	// Verify output
@@ -97,7 +101,7 @@ func TestClientBindingMatchesKeeper(t *testing.T) {
 	licenseID := uint64(7)
 	owner := sdk.AccAddress([]byte("owner_addr____________"))
 
-	viper.Set("chain.chain_id", "cosmos_262144-1")
+	// Chain ID is set in TestMain via config.Load()
 
 	// Client-computed message
 	clientMsg := BuildVRFMessage(seed, licenseID, owner)
