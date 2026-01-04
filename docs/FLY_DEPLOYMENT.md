@@ -23,6 +23,9 @@ Note: Auto mode only mines **delegated** licenses; transferring license ownershi
 
 ## Quick Start
 
+> **Note**: This guide deploys a **single replica**. For high availability with multiple
+> replicas (recommended for production), see [Multi-Replica Deployment](#multi-replica-deployment-high-availability).
+
 ### Step 1: Clone and Launch
 
 ```bash
@@ -39,7 +42,7 @@ fly launch --no-deploy
 fly deploy
 ```
 
-A 4GB persistent volume is automatically created on first deploy to store keys.
+A 4GB persistent volume is automatically created on first deploy to store keys and the SQLite database.
 
 The miner will:
 
@@ -156,13 +159,13 @@ Or modify `fly.toml` before deployment.
 
 The default `fly.toml` uses:
 
-| Setting      | Value                | Purpose                     |
-| ------------ | -------------------- | --------------------------- |
-| Machine      | shared-cpu-1x, 256MB | Cheapest option             |
-| Region       | iad (US East)        | Low latency to chain        |
-| Volume       | 1GB                  | Key persistence             |
-| Health check | GET /health          | Monitors chain connectivity |
-| Auto-stop    | Disabled             | Mining runs 24/7            |
+| Setting      | Value              | Purpose                     |
+| ------------ | ------------------ | --------------------------- |
+| Machine      | shared-cpu-2x, 1GB | Default in fly.toml         |
+| Region       | nrt (Tokyo)        | Low latency to chain        |
+| Volume       | 4GB                | Key + SQLite persistence    |
+| Health check | GET /health        | Monitors chain connectivity |
+| Auto-stop    | Disabled           | Mining runs 24/7            |
 
 ## Troubleshooting
 
@@ -219,13 +222,26 @@ fly deploy --verbose
 
 ## Cost Estimate
 
-Fly.io pricing (as of 2024):
+Fly.io pricing (as of January 2026):
 
-- **shared-cpu-1x, 256MB**: ~$2-3/month
-- **1GB Volume**: ~$0.15/month
+### Single Replica (Auto Mode)
+
+- **shared-cpu-2x, 1GB**: ~$6.39/month
+- **4GB Volume**: ~$0.60/month
 - **Bandwidth**: First 100GB free, then $0.02/GB
 
 Mining is lightweight and should stay within free tiers for bandwidth.
+
+### Multi-Replica (Production)
+
+See the [sizing table](#recommended-configuration) for detailed recommendations. Summary:
+
+| Setup      | Est. Cost/mo |
+| ---------- | ------------ |
+| 2 replicas | ~$15-60      |
+| 3 replicas | ~$60-480     |
+
+Costs scale with license count due to increased CPU requirements for VRF computation.
 
 ## Manual Mode (Advanced)
 
@@ -252,3 +268,194 @@ export MINER_OPERATOR_KEY="<key>"
 export MINER_VRF_KEY="<key>"
 ./aultmined set-key
 ```
+
+## Multi-Replica Deployment (High Availability)
+
+For production deployments where you cannot afford to miss epochs, deploy multiple replicas across regions.
+
+### Why Auto Mode is Single-Replica Only
+
+Auto mode generates keys and stores them on a Fly volume. Since each replica gets its own volume, each would generate **different keys** with different operator addresses. Licenses delegated to one operator wouldn't be mineable by other replicas.
+
+For multi-replica deployments, all replicas must share the **same keys** via Fly secrets.
+
+### How Multi-Replica Works
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Replica A  │     │  Replica B  │     │  Replica C  │
+│  (syd)      │     │   (nrt)     │     │   (sin)     │
+│  Same keys  │     │  Same keys  │     │  Same keys  │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       └───────────────────┼───────────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │    Chain     |
+                    │(deduplicates)|
+                    └──────────────┘
+```
+
+Every epoch:
+
+1. All replicas independently compute VRF proofs and solve PoW
+2. All replicas race to submit their batch
+3. First submission wins, others are rejected as duplicates (harmless)
+4. If any replica fails, others still submit successfully
+
+### Recommended Configuration
+
+| Licenses    | VM Size        | Memory | Replicas | Regions       | Est. Cost/mo    |
+| ----------- | -------------- | ------ | -------- | ------------- | --------------- |
+| <= 10K      | shared-cpu-2x  | 512MB  | 2        | syd, nrt      | ~$3.89\*replica |
+| 10K - 100K  | performance-2x | 4GB    | 2        | syd, nrt, sin | ~$62\*replica   |
+| 100K - 500K | performance-4x | 8GB    | 2        | syd, nrt, sin | ~$124\*replica  |
+| 500K - 1M   | performance-8x | 16GB   | 3        | syd, nrt, sin | ~$250\*replica  |
+
+### Setup Guide
+
+#### Step 1: Generate Keys Locally
+
+```bash
+# Download the miner binary or build from source
+./aultmined keygen
+# Output: Private key and operator address - SAVE THESE
+
+./aultmined vrfkeygen
+# Output: VRF private key and public key - SAVE THESE
+```
+
+#### Step 2: Store Keys as Fly Secrets
+
+```bash
+fly secrets set \
+  MINER_OPERATOR_KEY="<operator-private-key-hex>" \
+  MINER_VRF_KEY="<vrf-private-key-hex>"
+```
+
+#### Step 3: Configure fly.toml for Multi-Replica
+
+Update your `fly.toml`:
+
+```toml
+[env]
+  MINER_AUTO_MODE = "false"      # Disable auto mode
+  MINER_DISABLE_DB = "true"      # Stateless replicas
+  MINER_BATCH_SIZE = "1000"
+
+# Remove the [mounts] section - no volume needed with secrets
+# [mounts]
+#   source = "miner_data"
+#   destination = "/data"
+```
+
+#### Step 4: Deploy and Scale
+
+```bash
+# Deploy the app
+fly deploy
+
+# Scale to multiple regions
+fly scale count 1 --region nrt
+fly scale count 1 --region syd
+fly scale count 1 --region sin
+
+```
+
+#### Step 5: Register VRF Key On-Chain
+
+```bash
+export MINER_OPERATOR_KEY="<key>"
+export MINER_VRF_KEY="<key>"
+./aultmined set-key
+```
+
+#### Step 6: Delegate Licenses
+
+Delegate your licenses to the operator address (same as single-replica setup).
+
+### Expected Behavior
+
+In your logs, you'll see:
+
+- One replica successfully submits each epoch
+- Other replicas show "duplicate submission" messages - **this is normal**
+- If one replica goes down, others continue mining without interruption
+
+### Monitoring
+
+Check that at least one replica is healthy:
+
+```bash
+# Check all replicas
+fly status
+
+# Check logs across all replicas
+fly logs
+```
+
+## Migrating from Auto Mode to Multi-Replica
+
+If you started with auto mode and want to upgrade to multi-replica for reliability:
+
+### Step 1: Extract Existing Keys
+
+```bash
+# SSH into your running auto-mode instance
+fly ssh console
+
+# Inside the container, view your keys
+cat /data/keys.json
+```
+
+Output:
+
+```json
+{
+  "operator_key": "abc123...",
+  "vrf_key": "def456...",
+  "created_at": "2025-01-01T00:00:00Z"
+}
+```
+
+**Copy the `operator_key` and `vrf_key` values.**
+
+### Step 2: Store as Fly Secrets
+
+```bash
+fly secrets set \
+  MINER_OPERATOR_KEY="<operator_key from json>" \
+  MINER_VRF_KEY="<vrf_key from json>"
+```
+
+### Step 3: Update fly.toml
+
+```toml
+[env]
+  MINER_AUTO_MODE = "false"
+  MINER_DISABLE_DB = "true"
+
+# Remove or comment out the mounts section
+# [mounts]
+#   source = "miner_data"
+#   destination = "/data"
+```
+
+### Step 4: Deploy and Scale
+
+```bash
+fly deploy
+
+fly scale count 1 --region nrt
+
+fly scale count 1 --region syd
+
+fly scale count 1 --region sin
+
+```
+
+### What's Preserved
+
+- **Same operator address** - no re-delegation needed
+- **Same VRF key** - already registered on-chain
+- **Mining continues** - no interruption during migration
