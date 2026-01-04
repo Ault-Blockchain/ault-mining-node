@@ -40,95 +40,14 @@ import (
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
-// NewChainClient creates a new chain client with connection management
+// NewChainClient creates a new chain client with connection management.
+// It reads the operator key from the MINER_OPERATOR_KEY environment variable.
 func NewChainClient() (*ChainClient, error) {
 	cfg := config.Get()
-	grpcEndpoint := cfg.GRPCEndpoint
-	rpcEndpoint := cfg.RPCEndpoint
-
-	// Load operator private key from config
-	operatorKeyHex := cfg.OperatorKey
-	if operatorKeyHex == "" {
+	if cfg.OperatorKey == "" {
 		return nil, fmt.Errorf("MINER_OPERATOR_KEY environment variable is required")
 	}
-
-	privKeyBytes, err := hex.DecodeString(operatorKeyHex)
-	if err != nil {
-		return nil, fmt.Errorf("invalid operator key hex: %w", err)
-	}
-
-	privKey := &ethsecp256k1.PrivKey{Key: privKeyBytes}
-	pubKey := privKey.PubKey()
-	address := sdk.AccAddress(pubKey.Address())
-
-	log.Printf("Operator address: %s", address.String())
-
-	// Gas prices
-	gasPrices := "10000000" + appcfg.AttoDenom
-
-	// Create interface registry and codec for protobuf handling
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	minertypes.RegisterInterfaces(interfaceRegistry)
-	licensetypes.RegisterInterfaces(interfaceRegistry)
-	authtypes.RegisterInterfaces(interfaceRegistry)
-	cryptocodec.RegisterInterfaces(interfaceRegistry)
-	protoCodec := codec.NewProtoCodec(interfaceRegistry)
-
-	// Tx config for building/signing transactions
-	txCfg := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
-
-	// Connect with retry and keep-alive options
-	conn, err := grpc.NewClient(
-		grpcEndpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(
-			grpc.ForceCodec(protoCodec.GRPCCodec()),
-			grpc.MaxCallRecvMsgSize(10*1024*1024),
-		),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                10 * time.Second,
-			Timeout:             3 * time.Second,
-			PermitWithoutStream: true,
-		}),
-		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff: backoff.Config{
-				BaseDelay:  1.0 * time.Second,
-				Multiplier: 1.5,
-				Jitter:     0.2,
-				MaxDelay:   10 * time.Second,
-			},
-			MinConnectTimeout: 5 * time.Second,
-		}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to gRPC: %w", err)
-	}
-
-	client := &ChainClient{
-		grpcConn:          conn,
-		queryClient:       minertypes.NewQueryClient(conn),
-		licenseClient:     licensetypes.NewQueryClient(conn),
-		authClient:        authtypes.NewQueryClient(conn),
-		txClient:          txtypes.NewServiceClient(conn),
-		feemarketClient:   feemarkettypes.NewQueryClient(conn),
-		grpcEndpoint:      grpcEndpoint,
-		rpcEndpoint:       rpcEndpoint,
-		chainID:           cfg.ChainID, // from config, may be overridden by discovery
-		gasPrices:         gasPrices,
-		privKey:           privKey,
-		address:           address,
-		interfaceRegistry: interfaceRegistry,
-		protoCodec:        protoCodec,
-		txConfig:          txCfg,
-	}
-
-	// Discover chain ID from node status
-	if nid, err := client.discoverChainID(); err == nil && nid != "" {
-		log.Printf("Discovered chain ID: %s", nid)
-		client.chainID = nid
-	}
-
-	return client, nil
+	return NewChainClientWithKey(cfg.OperatorKey)
 }
 
 // NewChainClientWithKey creates a chain client using an explicit operator key (for auto mode)
