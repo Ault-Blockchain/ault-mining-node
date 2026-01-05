@@ -40,16 +40,24 @@ import (
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
-// NewChainClient creates a new chain client with connection management
+// NewChainClient creates a new chain client with connection management.
+// It reads the operator key from the MINER_OPERATOR_KEY environment variable.
 func NewChainClient() (*ChainClient, error) {
+	cfg := config.Get()
+	if cfg.OperatorKey == "" {
+		return nil, fmt.Errorf("MINER_OPERATOR_KEY environment variable is required")
+	}
+	return NewChainClientWithKey(cfg.OperatorKey)
+}
+
+// NewChainClientWithKey creates a chain client using an explicit operator key (for auto mode)
+func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 	cfg := config.Get()
 	grpcEndpoint := cfg.GRPCEndpoint
 	rpcEndpoint := cfg.RPCEndpoint
 
-	// Load operator private key from config
-	operatorKeyHex := cfg.OperatorKey
 	if operatorKeyHex == "" {
-		return nil, fmt.Errorf("MINER_OPERATOR_KEY environment variable is required")
+		return nil, fmt.Errorf("operator key is required")
 	}
 
 	privKeyBytes, err := hex.DecodeString(operatorKeyHex)
@@ -113,7 +121,7 @@ func NewChainClient() (*ChainClient, error) {
 		feemarketClient:   feemarkettypes.NewQueryClient(conn),
 		grpcEndpoint:      grpcEndpoint,
 		rpcEndpoint:       rpcEndpoint,
-		chainID:           cfg.ChainID, // from config, may be overridden by discovery
+		chainID:           cfg.ChainID,
 		gasPrices:         gasPrices,
 		privKey:           privKey,
 		address:           address,

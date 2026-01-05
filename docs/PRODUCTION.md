@@ -56,7 +56,7 @@ MINER_DISABLE_DB=false      # set to "true" to disable SQLite storage
 
 ### 3. Register VRF Key
 
-Submit VRF public key to chain. Required before mining - chain verifies proofs against this key.
+Submit VRF public key to chain. Required before mining - chain verifies proofs against this key. Note that the operator key must either ALREADY have a license delegated to it or own a license in order to set the VRF key.
 
 ```bash
 aultmined set-key

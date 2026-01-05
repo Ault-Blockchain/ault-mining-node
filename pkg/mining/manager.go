@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,7 +45,7 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 	if config.Get().DisableDB {
 		log.Println("SQLite storage disabled via MINER_DISABLE_DB")
 	} else {
-		const storagePath = "data/miner.db"
+		storagePath := filepath.Join(config.Get().DataDir, "miner.db")
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		var err error
@@ -141,8 +143,15 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 }
 
 // loadVRFKeyFromEnv loads VRF key from MINER_VRF_KEY environment variable
+// Note: Uses os.Getenv directly instead of config.Get() to support auto mode
+// where the VRF key is set via os.Setenv after config.Load() has already run.
 func loadVRFKeyFromEnv() ([]byte, []byte, error) {
-	hexKey := config.Get().VRFKey
+	// Read directly from env to support auto mode (key set after config loaded)
+	hexKey := os.Getenv(config.EnvVRFKey)
+	if hexKey == "" {
+		// Fallback to config in case someone sets it there
+		hexKey = config.Get().VRFKey
+	}
 	if hexKey == "" {
 		return nil, nil, fmt.Errorf("MINER_VRF_KEY environment variable is required")
 	}
