@@ -208,8 +208,10 @@ func setKeyCmd() *cobra.Command {
 					fmt.Println("\nNo action needed - key is already set.")
 					return nil
 				}
-				nonce = keyInfo.Nonce
-				fmt.Printf("Current VRF key found with nonce %d, updating to new key...\n", nonce)
+				// The query returns the nonce used at registration, but the chain expects
+				// the next nonce (registration nonce + 1) for rotation
+				nonce = keyInfo.Nonce + 1
+				fmt.Printf("Current VRF key found (registered with nonce %d), rotating to new key with nonce %d...\n", keyInfo.Nonce, nonce)
 			} else {
 				fmt.Println("No existing VRF key found, setting initial key...")
 			}
@@ -454,9 +456,12 @@ func mineCmd() *cobra.Command {
 								vrfRegistered = true
 							} else {
 								// Key mismatch - rotate to local key
-								log.Printf("On-chain VRF key differs from local key (nonce %d), rotating...", keyInfo.Nonce)
+								// The query returns the nonce used at registration, but the chain expects
+								// the next nonce (registration nonce + 1) for rotation
+								rotationNonce := keyInfo.Nonce + 1
+								log.Printf("On-chain VRF key differs from local key (registered nonce %d), rotating with nonce %d...", keyInfo.Nonce, rotationNonce)
 								updateAutoModeState(ownerAddr.String(), evmAddr.Hex(), vrfPubKeyHex, false, len(licenses), licenses)
-								if err := chainClient.SetOwnerVRFKey(ctx, vrfPubBytes, keyInfo.Nonce, true); err != nil {
+								if err := chainClient.SetOwnerVRFKey(ctx, vrfPubBytes, rotationNonce, true); err != nil {
 									log.Printf("VRF key rotation failed (will retry): %v", err)
 									time.Sleep(30 * time.Second)
 									continue

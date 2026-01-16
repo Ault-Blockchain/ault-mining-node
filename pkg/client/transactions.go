@@ -296,3 +296,29 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 func (c *ChainClient) broadcastTransaction(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg, gasLimit uint64) (string, error) {
 	return c.buildSignAndBroadcast(ctx, fromAddr, msg, gasLimit)
 }
+
+// DelegateMining delegates licenses to an operator
+func (c *ChainClient) DelegateMining(ctx context.Context, licenseIDs []uint64, operator string) (string, error) {
+	if len(licenseIDs) == 0 {
+		return "", fmt.Errorf("no licenses to delegate")
+	}
+
+	fromAddr, err := c.GetOwnerAddress()
+	if err != nil {
+		return "", err
+	}
+
+	msg := &minertypes.MsgDelegateMining{
+		Owner:      fromAddr.String(),
+		LicenseIds: licenseIDs,
+		Operator:   operator,
+	}
+
+	// Gas estimate: ~50k base + ~5k per license
+	gasLimit := uint64(50000 + len(licenseIDs)*5000)
+	if gasLimit > 1000000 {
+		gasLimit = 1000000
+	}
+
+	return c.broadcastTransaction(ctx, fromAddr, msg, gasLimit)
+}

@@ -25,6 +25,53 @@ import (
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
+// getEligibleLicenses queries and returns all licenses eligible for mining by this operator.
+// It combines owned licenses and licenses delegated to this operator (deduplicated).
+// The chain validates eligibility on submission - if you delegated a license to someone else,
+// the chain will reject your submission (the effective miner is the delegate, not the owner).
+func getEligibleLicenses(ctx context.Context, chainClient ChainClient, ownerAddr string) ([]uint64, error) {
+	var ownedLicenses, delegatedLicenses []uint64
+	var ownedErr, delegatedErr error
+	var wg sync.WaitGroup
+
+	// Query owned and delegated licenses in parallel
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		ownedLicenses, ownedErr = chainClient.GetOwnedLicenses(ctx, ownerAddr)
+	}()
+	go func() {
+		defer wg.Done()
+		delegatedLicenses, delegatedErr = chainClient.GetDelegatedLicenses(ctx, ownerAddr)
+	}()
+	wg.Wait()
+
+	// Combine and deduplicate
+	licenseSet := make(map[uint64]struct{})
+	if ownedErr != nil {
+		log.Printf("Warning: Failed to query owned licenses: %v", ownedErr)
+	} else {
+		for _, lid := range ownedLicenses {
+			licenseSet[lid] = struct{}{}
+		}
+	}
+	if delegatedErr != nil {
+		log.Printf("Warning: Failed to query delegated licenses: %v", delegatedErr)
+	} else {
+		for _, lid := range delegatedLicenses {
+			licenseSet[lid] = struct{}{}
+		}
+	}
+
+	// Convert set to slice
+	licenses := make([]uint64, 0, len(licenseSet))
+	for lid := range licenseSet {
+		licenses = append(licenses, lid)
+	}
+
+	return licenses, nil
+}
+
 // NewMinerManager creates a new miner manager for the owner
 func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 	// Load VRF key from environment variable
@@ -61,39 +108,11 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 		}
 	}
 
-	// Auto-detect licenses from chain (both owned and delegated) in parallel
+	// Auto-detect eligible licenses from chain
 	log.Printf("Auto-detecting licenses from chain...")
-
-	var licenses []uint64
-	var ownedLicenses, delegatedLicenses []uint64
-	var ownedErr, delegatedErr error
-	var wg sync.WaitGroup
-
-	// Query owned and delegated licenses
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		ownedLicenses, ownedErr = chainClient.GetOwnedLicenses(context.Background(), ownerAddr.String())
-	}()
-	go func() {
-		defer wg.Done()
-		delegatedLicenses, delegatedErr = chainClient.GetDelegatedLicenses(context.Background(), ownerAddr.String())
-	}()
-	wg.Wait()
-
-	// Process results
-	if ownedErr != nil {
-		log.Printf("Warning: Failed to query owned licenses: %v", ownedErr)
-	} else if len(ownedLicenses) > 0 {
-		log.Printf("Auto-detected %d owned license(s)", len(ownedLicenses))
-		licenses = append(licenses, ownedLicenses...)
-	}
-
-	if delegatedErr != nil {
-		log.Printf("Warning: Failed to query delegated licenses: %v", delegatedErr)
-	} else if len(delegatedLicenses) > 0 {
-		log.Printf("Auto-detected %d delegated license(s)", len(delegatedLicenses))
-		licenses = append(licenses, delegatedLicenses...)
+	licenses, err := getEligibleLicenses(context.Background(), chainClient, ownerAddr.String())
+	if err != nil {
+		log.Printf("Warning: Failed to query licenses: %v", err)
 	}
 
 	if len(licenses) == 0 {
@@ -127,15 +146,6 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 	if keyInfo, err := chainClient.GetOwnerKeyInfo(context.Background(), ownerAddr.String()); err == nil && keyInfo != nil && len(keyInfo.VrfPubkey) == 32 {
 		if !bytes.Equal(keyInfo.VrfPubkey, vrfPubKey) {
 			log.Printf("Warning: local VRF pubkey differs from on-chain owner key (nonce %d)", keyInfo.Nonce)
-		}
-	}
-
-	// For each license, if miner info has a VRF pubkey, ensure it matches local owner key
-	for _, lid := range licenses {
-		if info, err := chainClient.GetLicenseMinerInfo(context.Background(), lid); err == nil && len(info.VrfPubkey) == 32 {
-			if !bytes.Equal(info.VrfPubkey, vrfPubKey) {
-				log.Printf("Warning: license %d VRF key differs from local owner key; ensure correct owner is configured", lid)
-			}
 		}
 	}
 
@@ -235,8 +245,8 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		m.loadOrInitSession(ctx, epochInfo.Epoch)
 	}
 
-	// Query eligible licenses (delegated-licenses returns all minable licenses for this operator)
-	eligibleLicenses, err := m.chainClient.GetDelegatedLicenses(ctx, m.ownerAddr.String())
+	// Query eligible licenses (owned + delegated, chain validates on submission)
+	eligibleLicenses, err := getEligibleLicenses(ctx, m.chainClient, m.ownerAddr.String())
 	if err != nil {
 		log.Printf("Failed to query eligible licenses: %v", err)
 		return
