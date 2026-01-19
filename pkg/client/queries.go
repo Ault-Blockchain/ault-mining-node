@@ -8,6 +8,7 @@ import (
 
 	licensetypes "github.com/Ault-Blockchain/ault/x/license/types"
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 )
 
 // GetCurrentEpoch queries the current epoch from chain
@@ -123,13 +124,30 @@ func (c *ChainClient) GetOwnedLicenses(ctx context.Context, ownerAddr string) ([
 
 // GetDelegatedLicenses queries all license IDs delegated to an operator
 func (c *ChainClient) GetDelegatedLicenses(ctx context.Context, operatorAddr string) ([]uint64, error) {
-	resp, err := c.queryClient.DelegatedLicenses(ctx, &minertypes.QueryDelegatedLicensesRequest{
-		Operator: operatorAddr,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query delegated licenses: %w", err)
+	var allLicenses []uint64
+	var nextKey []byte
+
+	for {
+		resp, err := c.queryClient.DelegatedLicenses(ctx, &minertypes.QueryDelegatedLicensesRequest{
+			Operator: operatorAddr,
+			Pagination: &query.PageRequest{
+				Key:   nextKey,
+				Limit: 1000,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to query delegated licenses: %w", err)
+		}
+
+		allLicenses = append(allLicenses, resp.LicenseIds...)
+
+		if resp.Pagination == nil || len(resp.Pagination.NextKey) == 0 {
+			break
+		}
+		nextKey = resp.Pagination.NextKey
 	}
-	return resp.LicenseIds, nil
+
+	return allLicenses, nil
 }
 
 // GetLicensePayouts queries payouts for a license within epoch range

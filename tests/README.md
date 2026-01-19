@@ -31,6 +31,20 @@ Options:
 - `latest` (default)
 - Specific version tag (e.g., `v1.0.0`)
 
+#### Using Local Docker Image
+
+To build and use a local Docker image instead of pulling from the registry:
+
+```bash
+# Build local image from project root
+
+export GH_PAT=$(gh auth token)
+
+cd ..
+docker build --secret id=GH_PAT,env=GH_PAT -t aultmined:local .
+cd tests
+```
+
 ### 2. Mint Licenses
 
 Mint 10,000 licenses to 10 license holders using 4 minters.
@@ -82,9 +96,27 @@ Start mining with Docker containers.
 ./start_miner_client.sh [version]
 ```
 
+Options:
+
+- `--local`: Use local Docker image (`aultmined:local`) instead of pulling from registry
+- `[version]`: Image version tag (default: `latest`)
+
+Examples:
+
+```bash
+# Use remote registry image (latest)
+./start_miner_client.sh
+
+# Use specific version from registry
+./start_miner_client.sh v1.0.0
+
+# Use locally built image
+./start_miner_client.sh --local
+```
+
 Requires `.env` with:
 
-- `MINER_VRF_KEYS`: comma-separated VRF private keys (from step 4)
+- `MINER_VRF_KEYS`: comma-separated VRF private keys (from step 3)
 
 Each miner runs on a separate port: miner-1 -> 8080, miner-2 -> 8081, etc.
 

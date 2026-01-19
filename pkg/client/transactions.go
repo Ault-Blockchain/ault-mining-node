@@ -50,7 +50,7 @@ func (c *ChainClient) BatchSubmitWork(ctx context.Context, workResults []minerty
 		gasLimit = 5000000
 	}
 
-	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, gasLimit)
+	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, gasLimit, len(submissions))
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +106,7 @@ func (c *ChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonc
 		Owner:           fromAddr.String(),
 	}
 
-	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, 200000)
+	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, 200000, 1)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,8 @@ func (c *ChainClient) waitForVRFKeyRegistration(ctx context.Context, ownerAddr s
 }
 
 // buildSignAndBroadcast builds, signs and broadcasts a tx with one msg
-func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg, gasLimit uint64) (string, error) {
+// submissionCount is used for free gas calculation (0 for non-batch txs defaults to 1)
+func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg, gasLimit uint64, submissionCount int) (string, error) {
 	// Serialize signing/broadcasting to avoid concurrent sequence races
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -158,6 +159,11 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 	// Ensure local account number/sequence cache is initialized
 	if err := c.refreshAccountSequence(ctx, fromAddr, false); err != nil {
 		return "", err
+	}
+
+	// Default submission count to 1 for non-batch transactions
+	if submissionCount <= 0 {
+		submissionCount = 1
 	}
 
 	// Retry loop with sequence refresh/backoff on mismatch
@@ -173,7 +179,7 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 		var fees sdk.Coins
 		var floor sdkmath.LegacyDec
 		var simGas uint64
-		useFreeGas := c.isFreeGasEligible(ctx, gasLimit)
+		useFreeGas := c.isFreeGasEligible(ctx, gasLimit, submissionCount)
 
 		if useFreeGas {
 			// Use original gas limit to stay within free gas limit (no 1.2x adjustment)
@@ -293,6 +299,7 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 
 // broadcastTransaction broadcasts a transaction using operator funds
 // Note: Free gas is automatically granted by the chain for eligible miner operations
-func (c *ChainClient) broadcastTransaction(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg, gasLimit uint64) (string, error) {
-	return c.buildSignAndBroadcast(ctx, fromAddr, msg, gasLimit)
+// submissionCount is the number of submissions in a batch (use 0 or 1 for non-batch txs)
+func (c *ChainClient) broadcastTransaction(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg, gasLimit uint64, submissionCount int) (string, error) {
+	return c.buildSignAndBroadcast(ctx, fromAddr, msg, gasLimit, submissionCount)
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
-	"strconv"
 
 	"github.com/ProtonMail/go-ecvrf/ecvrf"
 
@@ -56,7 +55,7 @@ func BuildVRFMessage(seed []byte, licenseID uint64, owner sdk.AccAddress) []byte
 	buf = append(buf, []byte("AULT/MINER/V1")...)
 
 	// Chain ID as u64 (numeric portion)
-	chainIDNum := extractChainIDNumber(config.Get().ChainID)
+	chainIDNum := hashChainID(config.Get().ChainID)
 	chainIDBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(chainIDBytes, chainIDNum)
 	buf = append(buf, chainIDBytes...)
@@ -117,37 +116,16 @@ func IsBelowThreshold(y, threshold []byte) bool {
 	return yBig.Cmp(thresholdBig) < 0
 }
 
-// extractChainIDNumber parses the numeric part of a chain ID like "cosmos_262144-1" or just "9001"
-func extractChainIDNumber(chainID string) uint64 {
-	// First try parsing as pure number (e.g., "9001")
-	if num, err := strconv.ParseUint(chainID, 10, 64); err == nil {
-		return num
+// hashChainID computes a unique 64-bit identifier from the full chain ID string.
+// Uses Keccak256 hash of the entire chain ID to match chain-side VRF message construction.
+func hashChainID(chainID string) uint64 {
+	if chainID == "" {
+		return 1
 	}
-
-	// try split on '_' then '-' to extract numeric portion
-	if chainID != "" {
-		// e.g., cosmos_262144-1
-		// find first '_'
-		for i := 0; i < len(chainID); i++ {
-			if chainID[i] == '_' && i+1 < len(chainID) {
-				// from i+1 until '-' or end
-				j := i + 1
-				for j < len(chainID) && chainID[j] >= '0' && chainID[j] <= '9' {
-					j++
-				}
-				if num, err := strconv.ParseUint(chainID[i+1:j], 10, 64); err == nil {
-					return num
-				}
-				break
-			}
-		}
-		// Robust fallback: hash full chain ID and take first 8 bytes (BE)
-		h := sha3.NewLegacyKeccak256()
-		h.Write([]byte(chainID))
-		sum := h.Sum(nil)
-		return binary.BigEndian.Uint64(sum[:8])
-	}
-	return 1
+	h := sha3.NewLegacyKeccak256()
+	h.Write([]byte(chainID))
+	sum := h.Sum(nil)
+	return binary.BigEndian.Uint64(sum[:8])
 }
 
 // getModuleAddress derives the 20-byte module address constant used on-chain
