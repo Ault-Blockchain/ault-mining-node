@@ -44,60 +44,6 @@ import (
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
-func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName string, err error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", false, "", fmt.Errorf("gRPC endpoint is empty")
-	}
-
-	if strings.Contains(raw, "://") {
-		u, err := url.Parse(raw)
-		if err != nil {
-			return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: %w", err)
-		}
-
-		switch strings.ToLower(u.Scheme) {
-		case "https", "grpcs":
-			useTLS = true
-		case "http", "grpc":
-			useTLS = false
-		default:
-			return "", false, "", fmt.Errorf("unsupported CHAIN_GRPC scheme: %s", u.Scheme)
-		}
-
-		host := u.Host
-		if host == "" {
-			host = u.Path
-		}
-		if host == "" {
-			return "", false, "", fmt.Errorf("CHAIN_GRPC is missing host")
-		}
-		if !strings.Contains(host, ":") {
-			if useTLS {
-				host = host + ":443"
-			} else {
-				host = host + ":9090"
-			}
-		}
-
-		serverName = host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			serverName = h
-		}
-		return host, useTLS, serverName, nil
-	}
-
-	endpoint = raw
-	if !strings.Contains(endpoint, ":") {
-		endpoint = endpoint + ":9090"
-	}
-	serverName = endpoint
-	if h, _, err := net.SplitHostPort(endpoint); err == nil {
-		serverName = h
-	}
-	return endpoint, false, serverName, nil
-}
-
 // NewChainClient creates a new chain client with connection management.
 // It reads the operator key from the MINER_OPERATOR_KEY environment variable.
 func NewChainClient() (*ChainClient, error) {
@@ -523,4 +469,59 @@ func isDuplicateTx(raw string) bool {
 func isOutOfGas(raw string) bool {
 	s := strings.ToLower(raw)
 	return strings.Contains(s, "out of gas") || strings.Contains(s, "insufficient gas")
+}
+
+// normalizeGRPCEndpoint parses CHAIN_GRPC and returns host:port plus TLS hints.
+func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName string, err error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false, "", fmt.Errorf("gRPC endpoint is empty")
+	}
+
+	if strings.Contains(raw, "://") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: %w", err)
+		}
+
+		switch strings.ToLower(u.Scheme) {
+		case "https", "grpcs":
+			useTLS = true
+		case "http", "grpc":
+			useTLS = false
+		default:
+			return "", false, "", fmt.Errorf("unsupported CHAIN_GRPC scheme: %s", u.Scheme)
+		}
+
+		host := u.Host
+		if host == "" {
+			host = u.Path
+		}
+		if host == "" {
+			return "", false, "", fmt.Errorf("CHAIN_GRPC is missing host")
+		}
+		if !strings.Contains(host, ":") {
+			if useTLS {
+				host = host + ":443"
+			} else {
+				host = host + ":9090"
+			}
+		}
+
+		serverName = host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			serverName = h
+		}
+		return host, useTLS, serverName, nil
+	}
+
+	endpoint = raw
+	if !strings.Contains(endpoint, ":") {
+		endpoint = endpoint + ":9090"
+	}
+	serverName = endpoint
+	if h, _, err := net.SplitHostPort(endpoint); err == nil {
+		serverName = h
+	}
+	return endpoint, false, serverName, nil
 }
