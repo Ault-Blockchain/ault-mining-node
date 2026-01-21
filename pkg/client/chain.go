@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,8 +37,8 @@ import (
 	"github.com/cosmos/evm/crypto/ethsecp256k1"
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 
-	appcfg "github.com/Ault-Blockchain/ault/app/config"
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
+	appcfg "github.com/Ault-Blockchain/ault/app/config"
 	licensetypes "github.com/Ault-Blockchain/ault/x/license/types"
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
@@ -479,40 +478,7 @@ func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName
 	}
 
 	if strings.Contains(raw, "://") {
-		u, err := url.Parse(raw)
-		if err != nil {
-			return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: %w", err)
-		}
-
-		switch strings.ToLower(u.Scheme) {
-		case "https", "grpcs":
-			useTLS = true
-		case "http", "grpc":
-			useTLS = false
-		default:
-			return "", false, "", fmt.Errorf("unsupported CHAIN_GRPC scheme: %s", u.Scheme)
-		}
-
-		host := u.Host
-		if host == "" {
-			host = u.Path
-		}
-		if host == "" {
-			return "", false, "", fmt.Errorf("CHAIN_GRPC is missing host")
-		}
-		if !strings.Contains(host, ":") {
-			if useTLS {
-				host = host + ":443"
-			} else {
-				host = host + ":9090"
-			}
-		}
-
-		serverName = host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			serverName = h
-		}
-		return host, useTLS, serverName, nil
+		return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: use host[:port] without scheme (e.g. test-grpc.cloud.aultblockchain.xyz)")
 	}
 
 	endpoint = raw
