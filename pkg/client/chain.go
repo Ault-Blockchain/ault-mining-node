@@ -353,7 +353,8 @@ func (c *ChainClient) computeFees(gas uint64) (sdk.Coins, sdkmath.LegacyDec, err
 }
 
 // isFreeGasEligible checks if the current epoch is eligible for free gas
-func (c *ChainClient) isFreeGasEligible(ctx context.Context, gasLimit uint64) bool {
+// gasLimit is total gas, submissionCount is number of submissions in batch
+func (c *ChainClient) isFreeGasEligible(ctx context.Context, gasLimit uint64, submissionCount int) bool {
 	params, err := c.GetParams(ctx)
 	if err != nil {
 		return false
@@ -369,8 +370,12 @@ func (c *ChainClient) isFreeGasEligible(ctx context.Context, gasLimit uint64) bo
 		return false
 	}
 
-	// Check if gas limit is within free gas limit
-	if gasLimit > params.FreeMiningMaxGasLimit {
+	// Check if gas limit is within free gas limit (FreeMiningMaxGasLimit is per submission)
+	maxAllowedGas := params.FreeMiningMaxGasLimit * uint64(submissionCount)
+	if submissionCount == 0 {
+		maxAllowedGas = params.FreeMiningMaxGasLimit
+	}
+	if gasLimit > maxAllowedGas {
 		return false
 	}
 

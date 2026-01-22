@@ -405,7 +405,6 @@ func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uin
 		Epoch:     epochInfo.Epoch,
 		Y:         y,
 		Proof:     proof,
-		Nonce:     nonce,
 	}
 }
 
@@ -505,7 +504,6 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 				LicenseID: r.LicenseId,
 				Y:         r.Y,
 				Proof:     r.Proof,
-				Nonce:     r.Nonce,
 			})
 		}
 		_ = m.store.RecordBatchSubmission(ctx, workResults[0].Epoch, items, txHash)

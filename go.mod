@@ -5,15 +5,15 @@ go 1.24.0
 require (
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/math v1.5.3
-	github.com/Ault-Blockchain/ault v0.0.7
+	github.com/Ault-Blockchain/ault v0.5.0-rc.1
 	github.com/ProtonMail/go-ecvrf v0.0.1
 	github.com/cometbft/cometbft v0.38.20
 	github.com/cosmos/cosmos-sdk v0.53.5-0.20251030204916-768cb210885c
 	github.com/cosmos/evm v0.2.0
+	github.com/ethereum/go-ethereum v1.15.11
 	github.com/gofiber/fiber/v2 v2.52.10
 	github.com/prometheus/client_golang v1.23.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/zeebo/blake3 v0.2.4
 	golang.org/x/crypto v0.45.0
@@ -80,7 +80,6 @@ require (
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/emicklei/dot v1.8.0 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.0 // indirect
-	github.com/ethereum/go-ethereum v1.15.11 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -157,6 +156,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/supranational/blst v0.3.14 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
@@ -202,7 +202,7 @@ require (
 )
 
 replace (
-	github.com/Ault-Blockchain/ault => github.com/Ault-Blockchain/ault v0.2.0
+	github.com/Ault-Blockchain/ault => github.com/Ault-Blockchain/ault v0.5.0-rc.1
 	github.com/cometbft/cometbft => github.com/Ault-Blockchain/cometbft v0.38.19-ault-0
 	github.com/cosmos/cosmos-sdk => github.com/Ault-Blockchain/cosmos-sdk v0.53.5-ault-0
 	github.com/cosmos/evm => github.com/Ault-Blockchain/evm v0.5.1-ault-0
