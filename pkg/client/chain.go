@@ -4,9 +4,11 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"log"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
@@ -34,8 +37,8 @@ import (
 	"github.com/cosmos/evm/crypto/ethsecp256k1"
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 
-	appcfg "github.com/Ault-Blockchain/ault/app/config"
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
+	appcfg "github.com/Ault-Blockchain/ault/app/config"
 	licensetypes "github.com/Ault-Blockchain/ault/x/license/types"
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
@@ -53,7 +56,10 @@ func NewChainClient() (*ChainClient, error) {
 // NewChainClientWithKey creates a chain client using an explicit operator key (for auto mode)
 func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 	cfg := config.Get()
-	grpcEndpoint := cfg.GRPCEndpoint
+	grpcEndpoint, useTLS, serverName, err := normalizeGRPCEndpoint(cfg.GRPCEndpoint)
+	if err != nil {
+		return nil, err
+	}
 	rpcEndpoint := cfg.RPCEndpoint
 
 	if operatorKeyHex == "" {
@@ -86,9 +92,16 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 	txCfg := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
 
 	// Connect with retry and keep-alive options
+	var transportCreds credentials.TransportCredentials
+	if useTLS {
+		transportCreds = credentials.NewTLS(&tls.Config{ServerName: serverName})
+	} else {
+		transportCreds = insecure.NewCredentials()
+	}
+
 	conn, err := grpc.NewClient(
 		grpcEndpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transportCreds),
 		grpc.WithDefaultCallOptions(
 			grpc.ForceCodec(protoCodec.GRPCCodec()),
 			grpc.MaxCallRecvMsgSize(10*1024*1024),
@@ -455,4 +468,26 @@ func isDuplicateTx(raw string) bool {
 func isOutOfGas(raw string) bool {
 	s := strings.ToLower(raw)
 	return strings.Contains(s, "out of gas") || strings.Contains(s, "insufficient gas")
+}
+
+// normalizeGRPCEndpoint parses CHAIN_GRPC and returns host:port plus TLS hints.
+func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName string, err error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false, "", fmt.Errorf("gRPC endpoint is empty")
+	}
+
+	if strings.Contains(raw, "://") {
+		return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: use host[:port] without scheme (e.g. test-grpc.cloud.aultblockchain.xyz)")
+	}
+
+	endpoint = raw
+	if !strings.Contains(endpoint, ":") {
+		endpoint = endpoint + ":9090"
+	}
+	serverName = endpoint
+	if h, _, err := net.SplitHostPort(endpoint); err == nil {
+		serverName = h
+	}
+	return endpoint, false, serverName, nil
 }
