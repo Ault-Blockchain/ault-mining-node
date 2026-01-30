@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +20,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
-	stor "github.com/Ault-Blockchain/ault-miner-node/internal/storage"
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
@@ -39,27 +37,6 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 		return nil, fmt.Errorf("failed to get owner address: %w", err)
 	}
 	log.Printf("Owner address: %s", ownerAddr.String())
-
-	// Initialize storage unless disabled
-	var db *stor.DB
-	if config.Get().DisableDB {
-		log.Println("SQLite storage disabled via MINER_DISABLE_DB")
-	} else {
-		storagePath := filepath.Join(config.Get().DataDir, "miner.db")
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		var err error
-		db, err = stor.Open(ctx, stor.Options{
-			Path:        storagePath,
-			WAL:         true,
-			BusyTimeout: 5 * time.Second,
-		})
-		if err != nil {
-			log.Printf("Warning: failed to open storage: %v", err)
-		} else {
-			log.Printf("SQLite storage opened at %s", storagePath)
-		}
-	}
 
 	// Auto-detect licenses from chain (both owned and delegated) in parallel
 	log.Printf("Auto-detecting licenses from chain...")
@@ -120,7 +97,6 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 		licenses:    licenses,
 		chainClient: chainClient,
 		stats:       stats,
-		store:       db,
 	}
 
 	// Optional sanity: compare configured owner VRF key with chain state when present
@@ -199,32 +175,10 @@ func (m *MinerManager) Start(ctx context.Context) error {
 	}
 }
 
-// loadOrInitSession loads existing session from DB or creates a new one
-func (m *MinerManager) loadOrInitSession(ctx context.Context, currentEpoch uint64) {
-	if m.store == nil {
-		// No DB, just use current epoch
-		m.stats.StartEpoch = currentEpoch
-		atomic.StoreUint64(&m.stats.LastProcessedEpoch, 0)
-		log.Printf("Mining session started at epoch %d (no DB)", currentEpoch)
-		return
-	}
-
-	// Try to load existing session
-	session, err := m.store.GetMinerSession(ctx, m.ownerAddr.String())
-	if err == nil && session != nil {
-		// Existing session found
-		m.stats.StartEpoch = session.StartEpoch
-		atomic.StoreUint64(&m.stats.LastProcessedEpoch, session.LastProcessedEpoch)
-		log.Printf("Resumed mining session from epoch %d (last processed: %d)", session.StartEpoch, session.LastProcessedEpoch)
-		return
-	}
-
-	// No existing session, create new one
+// loadOrInitSession initializes a new in-memory mining session
+func (m *MinerManager) loadOrInitSession(_ context.Context, currentEpoch uint64) {
 	m.stats.StartEpoch = currentEpoch
 	atomic.StoreUint64(&m.stats.LastProcessedEpoch, 0)
-	if err := m.store.CreateOrUpdateSession(ctx, m.ownerAddr.String(), currentEpoch, currentEpoch); err != nil {
-		log.Printf("Warning: failed to save session to DB: %v", err)
-	}
 	log.Printf("Mining session started at epoch %d", currentEpoch)
 }
 
@@ -330,11 +284,8 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 		log.Printf("No wins this epoch")
 	}
 
-	// Update last processed epoch (in-memory and DB)
+	// Update last processed epoch
 	atomic.StoreUint64(&m.stats.LastProcessedEpoch, epochInfo.Epoch)
-	if m.store != nil {
-		_ = m.store.UpdateLastProcessedEpoch(ctx, m.ownerAddr.String(), epochInfo.Epoch)
-	}
 }
 
 // processLicenseForBatch processes mining for a single license and returns result if won
@@ -350,9 +301,6 @@ func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uin
 		atomic.StoreUint64(&stats.CurrentEpoch, epochInfo.Epoch)
 	}
 	atomic.AddUint64(&m.stats.TotalAttempts, 1)
-	if m.store != nil {
-		_ = m.store.IncrementAttempts(ctx, epochInfo.Epoch, licenseID)
-	}
 	metricVRFAttempts.WithLabelValues(strconv.FormatUint(licenseID, 10)).Inc()
 
 	// Build VRF input message
@@ -380,9 +328,6 @@ func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uin
 		stats.LastWinTime = time.Now() // Rare write, acceptable race
 	}
 	atomic.AddUint64(&m.stats.TotalWins, 1)
-	if m.store != nil {
-		_ = m.store.IncrementWin(ctx, epochInfo.Epoch, licenseID)
-	}
 	metricWins.WithLabelValues(strconv.FormatUint(licenseID, 10)).Inc()
 	log.Printf("🎯 License %d: VRF WIN! Starting PoW...", licenseID)
 
@@ -430,16 +375,6 @@ func (m *MinerManager) GetLicenses() []uint64 {
 	return m.licenses
 }
 
-// GetStore returns the storage database
-func (m *MinerManager) GetStore() *stor.DB {
-	return m.store
-}
-
-// SetStore sets the storage database
-func (m *MinerManager) SetStore(db *stor.DB) {
-	m.store = db
-}
-
 // ProcessEpoch is a public wrapper for processEpoch
 func (m *MinerManager) ProcessEpoch(ctx context.Context, epochInfo *minertypes.QueryEpochResponse) {
 	m.processEpoch(ctx, epochInfo)
@@ -460,7 +395,7 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 	}
 
 	// Submit batch work
-	txHash, err := m.chainClient.BatchSubmitWork(ctx, workResults)
+	_, err := m.chainClient.BatchSubmitWork(ctx, workResults)
 	if err != nil {
 		log.Printf("❌ Failed to submit batch work: %v", err)
 		if strings.Contains(err.Error(), "duplicate") {
@@ -496,22 +431,6 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 	}
 	atomic.AddUint64(&m.stats.TotalSubmissions, uint64(len(workResults)))
 	log.Printf("✅ Successfully submitted batch work for %d licenses in epoch %d", len(workResults), workResults[0].Epoch)
-	if m.store != nil {
-		items := make([]stor.SubmissionItem, 0, len(workResults))
-		for _, r := range workResults {
-			items = append(items, stor.SubmissionItem{
-				Epoch:     r.Epoch,
-				LicenseID: r.LicenseId,
-				Y:         r.Y,
-				Proof:     r.Proof,
-			})
-		}
-		_ = m.store.RecordBatchSubmission(ctx, workResults[0].Epoch, items, txHash)
-		// Record submission rewards for settlement tracking
-		for _, r := range workResults {
-			_ = m.store.RecordSubmissionReward(ctx, r.Epoch, r.LicenseId, 1)
-		}
-	}
 	for _, r := range workResults {
 		metricSubmissions.WithLabelValues(strconv.FormatUint(r.LicenseId, 10)).Inc()
 	}

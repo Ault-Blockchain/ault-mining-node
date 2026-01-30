@@ -5,7 +5,6 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	stor "github.com/Ault-Blockchain/ault-miner-node/internal/storage"
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
@@ -17,7 +16,6 @@ type MinerManager struct {
 	licenses    []uint64
 	chainClient ChainClient
 	stats       *MiningStats
-	store       *stor.DB
 }
 
 // ChainClient defines the interface for chain interactions
