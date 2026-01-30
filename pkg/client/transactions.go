@@ -44,11 +44,7 @@ func (c *ChainClient) BatchSubmitWork(ctx context.Context, workResults []minerty
 
 	// Calculate gas limit for batch transaction
 	// Free gas limit is 200,000 per submission (FreeMiningMaxGasLimit)
-	// Stay within free gas limit: gasLimit <= 200000 * submissionCount
 	gasLimit := uint64(len(submissions) * 200000)
-	if gasLimit > 5000000 {
-		gasLimit = 5000000
-	}
 
 	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, gasLimit, len(submissions))
 	if err != nil {
@@ -111,42 +107,7 @@ func (c *ChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonc
 		return err
 	}
 	fmt.Printf("Owner VRF key set! Tx: %s\n", txHash)
-	return c.waitForVRFKeyRegistration(ctx, fromAddr.String(), vrfPubkey)
-}
-
-// waitForVRFKeyRegistration polls the chain to verify VRF key registration
-func (c *ChainClient) waitForVRFKeyRegistration(ctx context.Context, ownerAddr string, expectedPubkey []byte) error {
-	const (
-		pollInterval = 3 * time.Second
-		maxAttempts  = 10
-	)
-
-	for i := 0; i < maxAttempts; i++ {
-		keyInfo, err := c.GetOwnerKeyInfo(ctx, ownerAddr)
-		if err == nil && keyInfo != nil && len(keyInfo.VrfPubkey) > 0 {
-			if len(expectedPubkey) == len(keyInfo.VrfPubkey) {
-				match := true
-				for j := range expectedPubkey {
-					if expectedPubkey[j] != keyInfo.VrfPubkey[j] {
-						match = false
-						break
-					}
-				}
-				if match {
-					return nil
-				}
-			}
-		}
-
-		if i < maxAttempts-1 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(pollInterval):
-			}
-		}
-	}
-	return fmt.Errorf("VRF key registration not confirmed after %d seconds", maxAttempts*int(pollInterval.Seconds()))
+	return c.waitForTxConfirmation(ctx, txHash)
 }
 
 // buildSignAndBroadcast builds, signs and broadcasts a tx with one msg
