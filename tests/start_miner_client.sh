@@ -6,14 +6,15 @@ set -e
 # Example: ./start_miner_client.sh --local
 # Example: ./start_miner_client.sh v1.0.0
 #
-# Starts 4 miners using hardcoded operator mnemonics
+# Starts miners using operator mnemonics from .env (OPERATOR_MNEMONIC_0, OPERATOR_MNEMONIC_1, ...)
 # Port mapping: miner-1 -> 8080, miner-2 -> 8081, etc.
 #
 # Options:
 #   --local    Use local Docker image (aultmined:local) instead of remote registry
 #
 # Required .env variables:
-# - MINER_VRF_KEYS: comma-separated VRF private keys (from setup_vrf_key.sh)
+# - OPERATOR_MNEMONIC_0..N: operator mnemonics (indexed from 0)
+# - MINER_VRF_KEY_0..N: VRF private keys (indexed from 0, from setup_vrf_key.sh)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEYRING_BACKEND="test"
@@ -60,13 +61,20 @@ CHAIN_GRPC="${CHAIN_GRPC:-localhost:9090}"
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_20904-1}"
 
-# Hardcoded operator mnemonics
-OPERATOR_MNEMONICS=(
-  "vicious strike position case imitate march observe seat earth unknown raise weasel left ahead offer museum come rose print stuff fire club coral sweet"
-  "almost cart flee render myth foil soap burden vintage decade name focus local clean sheriff easy avoid pottery slab hollow width income potato unveil"
-  "secret hair group relief what result obvious glare tobacco maze shock fire egg chair glare fee play bone fan visit motion valve easy session"
-  "shock useless season parrot polar thunder lyrics mutual chapter oak goose access category elite bracket mystery symbol reason above bubble forget spell garment fruit"
-)
+# Load operator mnemonics from env (OPERATOR_MNEMONIC_0, OPERATOR_MNEMONIC_1, ...)
+declare -a OPERATOR_MNEMONICS=()
+i=0
+while true; do
+  eval val="\$OPERATOR_MNEMONIC_${i}"
+  if [ -z "$val" ]; then break; fi
+  OPERATOR_MNEMONICS+=("$val")
+  i=$((i+1))
+done
+
+if [ ${#OPERATOR_MNEMONICS[@]} -eq 0 ]; then
+  echo "Error: No OPERATOR_MNEMONIC_* variables found in .env"
+  exit 1
+fi
 COUNT=${#OPERATOR_MNEMONICS[@]}
 
 # Common keyring flags
@@ -93,11 +101,18 @@ for i in $(seq 0 $((COUNT-1))); do
 done
 echo ""
 
-# Parse VRF keys from .env
-IFS=',' read -ra VRF_KEYS <<< "$MINER_VRF_KEYS"
+# Load VRF keys from env (MINER_VRF_KEY_0, MINER_VRF_KEY_1, ...)
+declare -a VRF_KEYS=()
+i=0
+while true; do
+  eval val="\$MINER_VRF_KEY_${i}"
+  if [ -z "$val" ]; then break; fi
+  VRF_KEYS+=("$val")
+  i=$((i+1))
+done
 
 if [ ${#VRF_KEYS[@]} -eq 0 ]; then
-  echo "Error: MINER_VRF_KEYS is empty"
+  echo "Error: No MINER_VRF_KEY_* variables found in .env"
   echo "Please run ./setup_vrf_key.sh first and add the output to .env"
   exit 1
 fi
@@ -105,7 +120,7 @@ fi
 if [ ${#VRF_KEYS[@]} -ne $COUNT ]; then
   echo "Error: VRF keys count mismatch"
   echo "  Operators: $COUNT"
-  echo "  MINER_VRF_KEYS count: ${#VRF_KEYS[@]}"
+  echo "  MINER_VRF_KEY_* count: ${#VRF_KEYS[@]}"
   exit 1
 fi
 

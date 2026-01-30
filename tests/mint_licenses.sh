@@ -33,34 +33,42 @@ CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_20904-1}"
 
 # Configuration
-TOTAL_LICENSES=100000
+TOTAL_LICENSES=840000
 DEFAULT_MAX_GAS_LIMIT=200000
-LICENSES_PER_MINTER=$((TOTAL_LICENSES / 4))
 MINT_BATCH_SIZE=1000
 GAS_LIMIT=$((MINT_BATCH_SIZE * DEFAULT_MAX_GAS_LIMIT))
 
-# Hardcoded minter mnemonics
-MINTER_MNEMONICS=(
-  "sustain system renew deliver dream multiply rapid dawn mansion prepare measure year firm strong peanut explain seat route slab now purity romance crash onion"
-  "train develop license give method circle salon chef hurry record effort cherry trigger clay shield scissors viable will mule slow action super account lunch"
-  "ticket curve abandon expire design banana fee switch bomb move soldier sign there parrot skate vacuum cushion concert width guess situate click van suffer"
-  "lion leisure enact truth someone oil team option level buzz track device knife moment update poverty few sad ring harsh struggle finger digital shadow"
-)
-MINTER_COUNT=${#MINTER_MNEMONICS[@]}
+# Load minter mnemonics from env (MINTER_MNEMONIC_0, MINTER_MNEMONIC_1, ...)
+declare -a MINTER_MNEMONICS=()
+i=0
+while true; do
+  eval val="\$MINTER_MNEMONIC_${i}"
+  if [ -z "$val" ]; then break; fi
+  MINTER_MNEMONICS+=("$val")
+  i=$((i+1))
+done
 
-# Hardcoded license holder mnemonics (10 holders, 1000 licenses each)
-LICENSE_HOLDER_MNEMONICS=(
-  "sweet detail acquire aware bless airport method garlic gloom tortoise pumpkin truck lend fancy web luggage noodle parent planet gap seat sad athlete junior"
-  "basket curve garden season gossip law bounce health wine blade upset crunch anchor habit card away tribe disorder kitchen peace leopard quick bid pioneer"
-  "crash morning exhibit soft half balance day diamond round turtle oppose silver wheel scale pear conduct census jungle clock verify park kidney system material"
-  "diagram horse lens height transfer marine pioneer tumble code boil evidence chat squirrel setup cradle enough giraffe addict garment worry adjust obvious cram mirror"
-  "sock dream aspect april coil butter deer bargain observe monitor account solve among finish wheel address betray age mushroom champion stomach reject hip holiday"
-  "mom drink noble between forest base test patrol tone spoil later stumble reform assist yard among cat tray insect cave code clip blush drastic"
-  "avoid prison retire author during viable clutch faith edge sister believe warm nice loud casino hurt identify practice tail useful athlete cheese kitten chronic"
-  "cross car cargo basket actress speak demand decrease grant blue wrestle armed wait suffer message puzzle quantum pattern attitude snack acquire gun force problem"
-  "toilet corn settle toilet sword citizen credit innocent access armed unknown symbol obey success ten snake matrix clay elevator foot false agent game catch"
-  "plug wash fat virus same script front year number happy federal valley swamp kid crater spy laundry only alley kitchen stumble amused ritual fashion"
-)
+if [ ${#MINTER_MNEMONICS[@]} -eq 0 ]; then
+  echo "Error: No MINTER_MNEMONIC_* variables found in .env"
+  exit 1
+fi
+MINTER_COUNT=${#MINTER_MNEMONICS[@]}
+LICENSES_PER_MINTER=$((TOTAL_LICENSES / MINTER_COUNT))
+
+# Load license holder mnemonics from env (LICENSE_HOLDER_MNEMONIC_0, LICENSE_HOLDER_MNEMONIC_1, ...)
+declare -a LICENSE_HOLDER_MNEMONICS=()
+i=0
+while true; do
+  eval val="\$LICENSE_HOLDER_MNEMONIC_${i}"
+  if [ -z "$val" ]; then break; fi
+  LICENSE_HOLDER_MNEMONICS+=("$val")
+  i=$((i+1))
+done
+
+if [ ${#LICENSE_HOLDER_MNEMONICS[@]} -eq 0 ]; then
+  echo "Error: No LICENSE_HOLDER_MNEMONIC_* variables found in .env"
+  exit 1
+fi
 LICENSE_HOLDER_COUNT=${#LICENSE_HOLDER_MNEMONICS[@]}
 LICENSES_PER_HOLDER=$((TOTAL_LICENSES / LICENSE_HOLDER_COUNT))
 
@@ -121,37 +129,19 @@ done
 
 echo ""
 
-# Create CSV file with license holder mapping
-LICENSE_CSV="$SCRIPT_DIR/license_holders.csv"
-echo "holder_index,holder_key,holder_address,first_license,last_license,count" > "$LICENSE_CSV"
-for i in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
-  FIRST_LIC=$((i * LICENSES_PER_HOLDER + 1))
-  LAST_LIC=$(((i + 1) * LICENSES_PER_HOLDER))
-  echo "$i,licenseholder$i,${LICENSE_HOLDER_ADDRS[$i]},$FIRST_LIC,$LAST_LIC,$LICENSES_PER_HOLDER" >> "$LICENSE_CSV"
-done
-echo "  Created license mapping: $LICENSE_CSV"
-echo ""
-
 # Step 2: Batch mint licenses to license holders (minters run in parallel)
 echo "Step 2: Batch mint $TOTAL_LICENSES licenses to $LICENSE_HOLDER_COUNT license holders"
 echo "  Running $MINTER_COUNT minters in parallel..."
 echo ""
 
-# Create log directory and license data directory
+# Create log directory
 LOG_DIR="$SCRIPT_DIR/mint_logs"
-LICENSE_DATA_DIR="$SCRIPT_DIR/license_data"
 mkdir -p "$LOG_DIR"
-mkdir -p "$LICENSE_DATA_DIR"
-
-# Initialize license ID files for each holder (clear previous data)
-for i in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
-  > "$LICENSE_DATA_DIR/holder_${i}_licenses.txt"
-done
 
 # Export variables for subshells
 export KEYRING_BACKEND KEYRING_DIR CHAIN_RPC CHAIN_ID
 export DEFAULT_MAX_GAS_LIMIT MINT_BATCH_SIZE GAS_LIMIT
-export LICENSES_PER_MINTER LICENSES_PER_HOLDER LICENSE_DATA_DIR
+export LICENSES_PER_MINTER LICENSES_PER_HOLDER
 
 # Function to mint for a single minter (runs in background)
 mint_for_minter() {
@@ -216,22 +206,7 @@ mint_for_minter() {
 
     echo "[Minter $minter_idx] -> TX: $tx_hash" >> "$log_file"
 
-    # Wait for TX to be included, then query events to get actual license IDs
     sleep 3
-    local tx_events=$(aultd q tx --type=hash "$tx_hash" --node "$CHAIN_RPC" --output json 2>/dev/null)
-    local first_id=$(echo "$tx_events" | jq -r '.events[] | select(.type=="batch_mint_license") | .attributes[] | select(.key=="first_id") | .value' 2>/dev/null)
-    local last_id=$(echo "$tx_events" | jq -r '.events[] | select(.type=="batch_mint_license") | .attributes[] | select(.key=="last_id") | .value' 2>/dev/null)
-
-    if [ -n "$first_id" ] && [ -n "$last_id" ]; then
-      # Append actual license IDs to holder's file (one per line)
-      for ((id=first_id; id<=last_id; id++)); do
-        echo "$id" >> "$LICENSE_DATA_DIR/holder_${holder_idx}_licenses.txt"
-      done
-      echo "[Minter $minter_idx] -> Recorded IDs: $first_id - $last_id" >> "$log_file"
-    else
-      echo "[Minter $minter_idx] -> WARNING: Could not extract license IDs from TX" >> "$log_file"
-    fi
-
     tx_count=$((tx_count + 1))
   done
 
@@ -285,33 +260,8 @@ if [ "$FAILED" = true ]; then
 fi
 
 echo ""
-echo "  Waiting for final confirmations..."
-sleep 5
-
-# Update CSV with actual license data from recorded files
-echo ""
 echo "=== License Minting Complete ==="
-echo ""
-echo "Step 3: Update license mapping with actual IDs"
-echo "holder_index,holder_key,holder_address,license_count,license_file" > "$LICENSE_CSV"
-TOTAL_MINTED=0
-for i in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
-  HOLDER_ADDR="${LICENSE_HOLDER_ADDRS[$i]}"
-  LICENSE_FILE="$LICENSE_DATA_DIR/holder_${i}_licenses.txt"
-
-  # Sort the license IDs (they may be out of order due to parallel minting)
-  sort -n "$LICENSE_FILE" -o "$LICENSE_FILE"
-
-  LICENSE_COUNT=$(wc -l < "$LICENSE_FILE" | tr -d ' ')
-  echo "$i,licenseholder$i,$HOLDER_ADDR,$LICENSE_COUNT,license_data/holder_${i}_licenses.txt" >> "$LICENSE_CSV"
-  echo "  Holder $i: $LICENSE_COUNT licenses -> $LICENSE_FILE"
-  TOTAL_MINTED=$((TOTAL_MINTED + LICENSE_COUNT))
-done
-echo ""
-echo "Summary:"
-echo "  Total licenses minted: $TOTAL_MINTED"
-echo "  License mapping: $LICENSE_CSV"
-echo "  License IDs: $LICENSE_DATA_DIR/"
+echo "  Check logs in $LOG_DIR/ for submitted tx hashes"
 echo ""
 echo "Next steps:"
 echo "  1. Run ./setup_vrf_key.sh to register VRF keys for operators (if not done)"

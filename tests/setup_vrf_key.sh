@@ -3,7 +3,7 @@ set -e
 
 # Usage: ./setup_vrf_key.sh [--local]
 #
-# Generates and registers VRF keys for 4 operators using hardcoded mnemonics
+# Generates and registers VRF keys for operators using mnemonics from .env
 #
 # Options:
 #   --local    Use local Docker image (aultmined:local) instead of remote registry
@@ -53,13 +53,20 @@ CHAIN_GRPC="${CHAIN_GRPC:-localhost:9090}"
 CHAIN_RPC="${CHAIN_RPC:-tcp://localhost:26657}"
 CHAIN_ID="${CHAIN_ID:-ault_20904-1}"
 
-# Hardcoded operator mnemonics
-OPERATOR_MNEMONICS=(
-  "vicious strike position case imitate march observe seat earth unknown raise weasel left ahead offer museum come rose print stuff fire club coral sweet"
-  "almost cart flee render myth foil soap burden vintage decade name focus local clean sheriff easy avoid pottery slab hollow width income potato unveil"
-  "secret hair group relief what result obvious glare tobacco maze shock fire egg chair glare fee play bone fan visit motion valve easy session"
-  "shock useless season parrot polar thunder lyrics mutual chapter oak goose access category elite bracket mystery symbol reason above bubble forget spell garment fruit"
-)
+# Load operator mnemonics from env (OPERATOR_MNEMONIC_0, OPERATOR_MNEMONIC_1, ...)
+declare -a OPERATOR_MNEMONICS=()
+i=0
+while true; do
+  eval val="\$OPERATOR_MNEMONIC_${i}"
+  if [ -z "$val" ]; then break; fi
+  OPERATOR_MNEMONICS+=("$val")
+  i=$((i+1))
+done
+
+if [ ${#OPERATOR_MNEMONICS[@]} -eq 0 ]; then
+  echo "Error: No OPERATOR_MNEMONIC_* variables found in .env"
+  exit 1
+fi
 OPERATOR_COUNT=${#OPERATOR_MNEMONICS[@]}
 
 # Common keyring flags
@@ -194,14 +201,12 @@ echo ""
 echo "Generated $OPERATOR_COUNT VRF key(s)"
 echo ""
 
-# Format as comma-separated for .env
-VRF_KEYS_CSV=$(IFS=','; echo "${VRF_PRIVATE_KEYS[*]}")
-
 echo "Add to your .env:"
-echo "  MINER_VRF_KEYS=$VRF_KEYS_CSV"
+for i in $(seq 0 $((OPERATOR_COUNT-1))); do
+  echo "  MINER_VRF_KEY_${i}=${VRF_PRIVATE_KEYS[$i]}"
+done
 echo ""
 
-# Also output individual keys for reference
 echo "Individual keys:"
 for i in $(seq 0 $((OPERATOR_COUNT-1))); do
   echo "  Operator $((i+1)):"

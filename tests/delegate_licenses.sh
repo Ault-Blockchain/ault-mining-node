@@ -3,7 +3,7 @@
 # Usage: ./delegate_licenses.sh
 #
 # Delegates licenses from license holders to 4 operators
-# Reads license holder info from license_holders.csv (created by mint_licenses.sh)
+
 
 # Trap Ctrl+C to kill all background processes
 cleanup() {
@@ -40,37 +40,37 @@ DELEGATION_BATCH_SIZE=1000
 RATE_LIMIT_PER_EPOCH=10
 EPOCH_WAIT_TIME=65
 
-# License CSV path (will be created/updated with actual ownership data)
-LICENSE_CSV="$SCRIPT_DIR/license_holders.csv"
+# Load operator mnemonics from env (OPERATOR_MNEMONIC_0, OPERATOR_MNEMONIC_1, ...)
+declare -a OPERATOR_MNEMONICS=()
+i=0
+while true; do
+  eval val="\$OPERATOR_MNEMONIC_${i}"
+  if [ -z "$val" ]; then break; fi
+  OPERATOR_MNEMONICS+=("$val")
+  i=$((i+1))
+done
 
-# License holder count (same as mnemonics array)
-LICENSE_HOLDER_COUNT=10
-
-# License data directory (created by mint_licenses.sh)
-LICENSE_DATA_DIR="$SCRIPT_DIR/license_data"
-
-# Hardcoded operator mnemonics
-OPERATOR_MNEMONICS=(
-  "vicious strike position case imitate march observe seat earth unknown raise weasel left ahead offer museum come rose print stuff fire club coral sweet"
-  "almost cart flee render myth foil soap burden vintage decade name focus local clean sheriff easy avoid pottery slab hollow width income potato unveil"
-  "secret hair group relief what result obvious glare tobacco maze shock fire egg chair glare fee play bone fan visit motion valve easy session"
-  "shock useless season parrot polar thunder lyrics mutual chapter oak goose access category elite bracket mystery symbol reason above bubble forget spell garment fruit"
-)
+if [ ${#OPERATOR_MNEMONICS[@]} -eq 0 ]; then
+  echo "Error: No OPERATOR_MNEMONIC_* variables found in .env"
+  exit 1
+fi
 OPERATOR_COUNT=${#OPERATOR_MNEMONICS[@]}
 
-# Hardcoded license holder mnemonics (10 holders)
-LICENSE_HOLDER_MNEMONICS=(
-  "sweet detail acquire aware bless airport method garlic gloom tortoise pumpkin truck lend fancy web luggage noodle parent planet gap seat sad athlete junior"
-  "basket curve garden season gossip law bounce health wine blade upset crunch anchor habit card away tribe disorder kitchen peace leopard quick bid pioneer"
-  "crash morning exhibit soft half balance day diamond round turtle oppose silver wheel scale pear conduct census jungle clock verify park kidney system material"
-  "diagram horse lens height transfer marine pioneer tumble code boil evidence chat squirrel setup cradle enough giraffe addict garment worry adjust obvious cram mirror"
-  "sock dream aspect april coil butter deer bargain observe monitor account solve among finish wheel address betray age mushroom champion stomach reject hip holiday"
-  "mom drink noble between forest base test patrol tone spoil later stumble reform assist yard among cat tray insect cave code clip blush drastic"
-  "avoid prison retire author during viable clutch faith edge sister believe warm nice loud casino hurt identify practice tail useful athlete cheese kitten chronic"
-  "cross car cargo basket actress speak demand decrease grant blue wrestle armed wait suffer message puzzle quantum pattern attitude snack acquire gun force problem"
-  "toilet corn settle toilet sword citizen credit innocent access armed unknown symbol obey success ten snake matrix clay elevator foot false agent game catch"
-  "plug wash fat virus same script front year number happy federal valley swamp kid crater spy laundry only alley kitchen stumble amused ritual fashion"
-)
+# Load license holder mnemonics from env (LICENSE_HOLDER_MNEMONIC_0, LICENSE_HOLDER_MNEMONIC_1, ...)
+declare -a LICENSE_HOLDER_MNEMONICS=()
+i=0
+while true; do
+  eval val="\$LICENSE_HOLDER_MNEMONIC_${i}"
+  if [ -z "$val" ]; then break; fi
+  LICENSE_HOLDER_MNEMONICS+=("$val")
+  i=$((i+1))
+done
+
+if [ ${#LICENSE_HOLDER_MNEMONICS[@]} -eq 0 ]; then
+  echo "Error: No LICENSE_HOLDER_MNEMONIC_* variables found in .env"
+  exit 1
+fi
+LICENSE_HOLDER_COUNT=${#LICENSE_HOLDER_MNEMONICS[@]}
 
 # Common keyring flags (used throughout script)
 KEYRING_FLAGS="--keyring-backend $KEYRING_BACKEND --home $KEYRING_DIR"
@@ -134,26 +134,16 @@ echo ""
 
 # Step 2: Check VRF keys for operators
 echo "Step 2: Check VRF keys for operators"
-VRF_MISSING=false
 for i in $(seq 0 $((OPERATOR_COUNT-1))); do
   OPERATOR_ADDR="${OPERATOR_ADDRS[$i]}"
   VRF_KEY=$(aultd q miner owner-key "$OPERATOR_ADDR" --node "$CHAIN_RPC" --output json 2>/dev/null | jq -r '.vrf_pubkey // empty')
 
   if [ -z "$VRF_KEY" ] || [ "$VRF_KEY" = "null" ]; then
-    echo "  Operator $((i+1)) ($OPERATOR_ADDR): VRF key NOT registered"
-    VRF_MISSING=true
+    echo "  Operator $((i+1)) ($OPERATOR_ADDR): VRF key NOT registered (will register later)"
   else
     echo "  Operator $((i+1)) ($OPERATOR_ADDR): VRF key registered"
   fi
 done
-
-if [ "$VRF_MISSING" = true ]; then
-  echo ""
-  echo "Error: Some operators do not have VRF keys registered."
-  echo "Please run setup_vrf_key.sh first:"
-  echo "  bash ./tests/setup_vrf_key.sh"
-  exit 1
-fi
 
 echo ""
 
@@ -162,8 +152,9 @@ echo "Step 3: Delegate licenses from each holder to operators"
 echo "  Running $LICENSE_HOLDER_COUNT holders in parallel..."
 echo ""
 
-# Create log directory
+# Create log directory (clean previous logs)
 LOG_DIR="$SCRIPT_DIR/delegation_logs"
+rm -rf "$LOG_DIR"
 mkdir -p "$LOG_DIR"
 
 # Export variables for subshells
@@ -171,11 +162,12 @@ export KEYRING_BACKEND KEYRING_DIR CHAIN_RPC CHAIN_ID
 export DEFAULT_MAX_GAS_LIMIT DELEGATION_BATCH_SIZE RATE_LIMIT_PER_EPOCH EPOCH_WAIT_TIME
 
 # Function to delegate for a single holder (runs in background)
-# Arguments: holder_idx, holder_key, license_ids_csv, operator_addrs_csv
+# Queries licenses from node page by page, delegates each batch immediately
+# Arguments: holder_idx, holder_key, holder_addr, operator_addrs_csv
 delegate_for_holder() {
   local holder_idx=$1
   local holder_key=$2
-  local license_ids_csv=$3
+  local holder_addr=$3
   local operator_addrs_csv=$4
   local log_file="$LOG_DIR/holder_${holder_idx}.log"
 
@@ -183,54 +175,96 @@ delegate_for_holder() {
   IFS='|' read -ra OP_ADDRS <<< "$operator_addrs_csv"
   local op_count=${#OP_ADDRS[@]}
 
-  # Parse license IDs into array
-  IFS=',' read -ra LICENSE_IDS <<< "$license_ids_csv"
-  local total_count=${#LICENSE_IDS[@]}
+  echo "[Holder $holder_idx] Starting: $holder_key ($holder_addr)" >> "$log_file"
 
-  echo "[Holder $holder_idx] Starting: $holder_key" >> "$log_file"
-  echo "[Holder $holder_idx] Total licenses: $total_count" >> "$log_file"
-
-  # Track tx count for this signer's rate limit
   local tx_count=0
+  local op_idx=0
+  local page_key=""
+  local accumulated_csv=""
+  local accumulated_count=0
+  local pages_per_batch=$((DELEGATION_BATCH_SIZE / 100))
 
-  # Calculate licenses per operator for this holder
-  local licenses_per_op=$((total_count / op_count))
-
-  local license_offset=0
-  for op_idx in $(seq 0 $((op_count-1))); do
-    local operator_addr="${OP_ADDRS[$op_idx]}"
-
-    # Calculate license range indices for this operator
-    local start_idx=$license_offset
-    local end_idx=$((license_offset + licenses_per_op - 1))
-    if [ $end_idx -ge $total_count ]; then
-      end_idx=$((total_count - 1))
+  while true; do
+    # Query licenses for this holder (1 page = 100 from chain)
+    local query_args="--node $CHAIN_RPC --output json --limit $DELEGATION_BATCH_SIZE"
+    if [ -n "$page_key" ]; then
+      query_args="$query_args --page-key $page_key"
     fi
 
-    # Delegate in batches
-    for ((batch_start_idx=start_idx; batch_start_idx<=end_idx; batch_start_idx+=DELEGATION_BATCH_SIZE)); do
-      local batch_end_idx=$((batch_start_idx + DELEGATION_BATCH_SIZE - 1))
-      if [ $batch_end_idx -gt $end_idx ]; then
-        batch_end_idx=$end_idx
+    local query_result=""
+    for ((retry=1; retry<=5; retry++)); do
+      query_result=$(aultd q license licenses-by-owner "$holder_addr" $query_args 2>/dev/null)
+      if [ -n "$query_result" ]; then
+        break
       fi
+      echo "[Holder $holder_idx] Query empty, retry $retry/5..." >> "$log_file"
+      sleep 3
+    done
+    if [ -z "$query_result" ]; then
+      echo "[Holder $holder_idx] FAILED: query returned empty after 5 retries" >> "$log_file"
+      echo "FAILED" > "$LOG_DIR/holder_${holder_idx}.status"
+      return 1
+    fi
 
-      local batch_count=$((batch_end_idx - batch_start_idx + 1))
+    # Extract license IDs as comma-separated
+    local page_csv=$(echo "$query_result" | jq -r '[.licenses[].id] | join(",")')
+    local page_count=$(echo "$query_result" | jq -r '.licenses | length')
+    local next_key=$(echo "$query_result" | jq -r '.pagination.next_key // empty')
 
-      # Build comma-separated batch of license IDs
-      local batch_csv=""
-      for ((i=batch_start_idx; i<=batch_end_idx; i++)); do
-        if [ -n "$batch_csv" ]; then
-          batch_csv="${batch_csv},"
+    if [ "$page_count" = "0" ] || [ -z "$page_csv" ]; then
+      # No more pages - delegate whatever is accumulated
+      if [ $accumulated_count -gt 0 ]; then
+        echo "[Holder $holder_idx] Last batch: delegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
+        local operator_addr="${OP_ADDRS[$op_idx]}"
+        op_idx=$(( (op_idx + 1) % op_count ))
+        local batch_gas=$((accumulated_count * DEFAULT_MAX_GAS_LIMIT))
+
+        local tx_result=$(echo "y" | aultd tx miner delegate-mining "$accumulated_csv" "$operator_addr" \
+          --from "$holder_key" \
+          --keyring-backend "$KEYRING_BACKEND" \
+          --home "$KEYRING_DIR" \
+          --node "$CHAIN_RPC" \
+          --chain-id "$CHAIN_ID" \
+          --gas $batch_gas \
+          --fees 0aault \
+          --broadcast-mode sync \
+          --yes \
+          --output json 2>&1) || true
+
+        local tx_hash=$(echo "$tx_result" | jq -r '.txhash // empty' 2>/dev/null)
+        local tx_code=$(echo "$tx_result" | jq -r '.code // 0' 2>/dev/null)
+        if [ -z "$tx_hash" ] || [ "$tx_code" != "0" ]; then
+          echo "[Holder $holder_idx] TX failed (code: $tx_code), skipping..." >> "$log_file"
+          echo "$tx_result" >> "$log_file"
+        else
+          echo "[Holder $holder_idx] -> TX: $tx_hash" >> "$log_file"
         fi
-        batch_csv="${batch_csv}${LICENSE_IDS[$i]}"
-      done
+        tx_count=$((tx_count + 1))
+      fi
+      echo "[Holder $holder_idx] No more licenses to delegate" >> "$log_file"
+      break
+    fi
 
-      echo "[Holder $holder_idx] Delegating batch ($batch_count IDs) to Operator $((op_idx+1))..." >> "$log_file"
+    # Accumulate this page's IDs
+    if [ -z "$accumulated_csv" ]; then
+      accumulated_csv="$page_csv"
+    else
+      accumulated_csv="$accumulated_csv,$page_csv"
+    fi
+    accumulated_count=$((accumulated_count + page_count))
 
-      # Calculate gas based on actual batch count
-      local batch_gas=$((batch_count * DEFAULT_MAX_GAS_LIMIT))
+    echo "[Holder $holder_idx] Fetched page ($page_count), accumulated: $accumulated_count / $DELEGATION_BATCH_SIZE" >> "$log_file"
 
-      local tx_result=$(echo "y" | aultd tx miner delegate-mining "$batch_csv" "$operator_addr" \
+    # Check if we've accumulated enough for a full batch
+    if [ $accumulated_count -ge $DELEGATION_BATCH_SIZE ]; then
+      local operator_addr="${OP_ADDRS[$op_idx]}"
+      op_idx=$(( (op_idx + 1) % op_count ))
+
+      echo "[Holder $holder_idx] Delegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
+
+      local batch_gas=$((accumulated_count * DEFAULT_MAX_GAS_LIMIT))
+
+      local tx_result=$(echo "y" | aultd tx miner delegate-mining "$accumulated_csv" "$operator_addr" \
         --from "$holder_key" \
         --keyring-backend "$KEYRING_BACKEND" \
         --home "$KEYRING_DIR" \
@@ -246,35 +280,61 @@ delegate_for_holder() {
       local tx_code=$(echo "$tx_result" | jq -r '.code // 0' 2>/dev/null)
 
       if [ -z "$tx_hash" ] || [ "$tx_code" != "0" ]; then
-        echo "[Holder $holder_idx] FAILED (code: $tx_code)" >> "$log_file"
+        echo "[Holder $holder_idx] TX failed (code: $tx_code), skipping..." >> "$log_file"
         echo "$tx_result" >> "$log_file"
-        echo "FAILED" > "$LOG_DIR/holder_${holder_idx}.status"
-        return 1
-      fi
+      else
+        echo "[Holder $holder_idx] -> TX: $tx_hash" >> "$log_file"
 
-      echo "[Holder $holder_idx] -> TX: $tx_hash" >> "$log_file"
-
-      # Wait for TX to be confirmed before sending next TX
-      for ((wait_i=1; wait_i<=30; wait_i++)); do
-        local tx_query=$(aultd q tx --type=hash "$tx_hash" --node "$CHAIN_RPC" --output json 2>/dev/null)
-        local tx_height=$(echo "$tx_query" | jq -r '.height // "0"' 2>/dev/null)
-        if [ "$tx_height" != "0" ] && [ "$tx_height" != "null" ] && [ -n "$tx_height" ]; then
-          echo "[Holder $holder_idx] -> Confirmed at height $tx_height" >> "$log_file"
-          break
-        fi
         sleep 1
-      done
 
-      # Increment tx count and check rate limit (per signer)
-      tx_count=$((tx_count + 1))
-      if [ $((tx_count % RATE_LIMIT_PER_EPOCH)) -eq 0 ]; then
-        echo "[Holder $holder_idx] Rate limit ($tx_count txs). Waiting ${EPOCH_WAIT_TIME}s..." >> "$log_file"
-        sleep $EPOCH_WAIT_TIME
-        echo "[Holder $holder_idx] Resuming..." >> "$log_file"
+        tx_count=$((tx_count + 1))
+        if [ $((tx_count % RATE_LIMIT_PER_EPOCH)) -eq 0 ]; then
+          echo "[Holder $holder_idx] Rate limit ($tx_count txs). Waiting ${EPOCH_WAIT_TIME}s..." >> "$log_file"
+          sleep $EPOCH_WAIT_TIME
+          echo "[Holder $holder_idx] Resuming..." >> "$log_file"
+        fi
       fi
-    done
 
-    license_offset=$((license_offset + licenses_per_op))
+      # Reset accumulator
+      accumulated_csv=""
+      accumulated_count=0
+    fi
+
+    # Move to next page or flush remaining
+    if [ -z "$next_key" ] || [ "$next_key" = "null" ]; then
+      # No more pages - delegate remaining accumulated licenses
+      if [ $accumulated_count -gt 0 ]; then
+        local operator_addr="${OP_ADDRS[$op_idx]}"
+        op_idx=$(( (op_idx + 1) % op_count ))
+
+        echo "[Holder $holder_idx] Last batch: delegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
+        local batch_gas=$((accumulated_count * DEFAULT_MAX_GAS_LIMIT))
+
+        local tx_result=$(echo "y" | aultd tx miner delegate-mining "$accumulated_csv" "$operator_addr" \
+          --from "$holder_key" \
+          --keyring-backend "$KEYRING_BACKEND" \
+          --home "$KEYRING_DIR" \
+          --node "$CHAIN_RPC" \
+          --chain-id "$CHAIN_ID" \
+          --gas $batch_gas \
+          --fees 0aault \
+          --broadcast-mode sync \
+          --yes \
+          --output json 2>&1) || true
+
+        local tx_hash=$(echo "$tx_result" | jq -r '.txhash // empty' 2>/dev/null)
+        local tx_code=$(echo "$tx_result" | jq -r '.code // 0' 2>/dev/null)
+        if [ -z "$tx_hash" ] || [ "$tx_code" != "0" ]; then
+          echo "[Holder $holder_idx] TX failed (code: $tx_code), skipping..." >> "$log_file"
+          echo "$tx_result" >> "$log_file"
+        else
+          echo "[Holder $holder_idx] -> TX: $tx_hash" >> "$log_file"
+        fi
+        tx_count=$((tx_count + 1))
+      fi
+      break
+    fi
+    page_key="$next_key"
   done
 
   echo "[Holder $holder_idx] Complete! Total txs: $tx_count" >> "$log_file"
@@ -284,47 +344,27 @@ delegate_for_holder() {
 # Build operator addresses as pipe-separated string for passing to function
 OPERATOR_ADDRS_CSV=$(IFS='|'; echo "${OPERATOR_ADDRS[*]}")
 
-# Step 3.5: Load license IDs from files (created by mint_licenses.sh)
-echo "Step 3.5: Load license IDs from files"
-if [ ! -d "$LICENSE_DATA_DIR" ]; then
-  echo "Error: License data directory not found: $LICENSE_DATA_DIR"
-  echo "Please run mint_licenses.sh first"
-  exit 1
-fi
-
-declare -a HOLDER_LICENSE_IDS=()
-for holder_idx in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
-  license_file="$LICENSE_DATA_DIR/holder_${holder_idx}_licenses.txt"
-
-  if [ ! -f "$license_file" ]; then
-    echo "Error: License file not found: $license_file"
-    exit 1
-  fi
-
-  # Read license IDs from file (one per line) and convert to comma-separated
-  license_ids=$(cat "$license_file" | tr '\n' ',' | sed 's/,$//')
-  license_count=$(wc -l < "$license_file" | tr -d ' ')
-
-  echo "  Holder $holder_idx: $license_count licenses from $license_file"
-  HOLDER_LICENSE_IDS+=("$license_ids")
-done
-echo ""
-
-# Step 4: Delegate licenses from each holder to operators (in parallel)
+# Step 4: Delegate licenses from each holder to operators (parallel with staggered start)
+# Each holder queries its own licenses from the node and delegates page by page
+STAGGER_DELAY=5
 echo "Step 4: Delegate licenses from each holder to operators"
-echo "  Running $LICENSE_HOLDER_COUNT holders in parallel..."
+echo "  Running $LICENSE_HOLDER_COUNT holders in parallel (${STAGGER_DELAY}s stagger)..."
 echo ""
 
-# Launch all holders in parallel
+# Launch all holders in parallel with staggered start
 declare -a PIDS=()
 for holder_idx in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
   holder_key="${HOLDER_KEYS[$holder_idx]}"
-  license_ids="${HOLDER_LICENSE_IDS[$holder_idx]}"
+  holder_addr="${HOLDER_ADDRS[$holder_idx]}"
 
   echo "  Starting holder $holder_idx ($holder_key)..."
 
-  delegate_for_holder "$holder_idx" "$holder_key" "$license_ids" "$OPERATOR_ADDRS_CSV" &
+  delegate_for_holder "$holder_idx" "$holder_key" "$holder_addr" "$OPERATOR_ADDRS_CSV" &
   PIDS+=($!)
+
+  if [ $holder_idx -lt $((LICENSE_HOLDER_COUNT-1)) ]; then
+    sleep $STAGGER_DELAY
+  fi
 done
 
 echo ""

@@ -86,7 +86,7 @@ This script uses hardcoded operator mnemonics and will:
 3. Register VRF public keys on chain
 4. Output VRF private keys to add to `.env`
 
-After running, copy the output `MINER_VRF_KEYS` to your `.env` file.
+After running, copy the output `MINER_VRF_KEY_*` variables to your `.env` file.
 
 ### 5. Start Miner Client
 
@@ -116,7 +116,7 @@ Examples:
 
 Requires `.env` with:
 
-- `MINER_VRF_KEYS`: comma-separated VRF private keys (from step 3)
+- `MINER_VRF_KEY_0..N`: VRF private keys (indexed from 0, from step 3)
 
 Each miner runs on a separate port: miner-1 -> 8080, miner-2 -> 8081, etc.
 
@@ -128,7 +128,7 @@ Each miner runs on a separate port: miner-1 -> 8080, miner-2 -> 8081, etc.
 | `CHAIN_GRPC`       | Chain gRPC endpoint                             | `localhost:9090`                    |
 | `CHAIN_RPC`        | Chain RPC endpoint                              | `tcp://localhost:26657`             |
 | `CHAIN_ID`         | Chain ID                                        | `ault_20904-1`                      |
-| `MINER_VRF_KEYS`   | VRF private keys (comma-separated)              | -                                   |
+| `MINER_VRF_KEY_*`  | VRF private keys (indexed from 0)               | -                                   |
 | `MINER_BATCH_SIZE` | Max submissions per batch (<=0 = fallback 1000) | `1000`                              |
 
 ## Useful Commands
