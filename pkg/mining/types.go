@@ -2,6 +2,7 @@ package mining
 
 import (
 	"context"
+	"sync"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -17,6 +18,7 @@ type MinerManager struct {
 	licenses    []uint64
 	chainClient ChainClient
 	stats       *MiningStats
+	statsMu     sync.RWMutex // Protects stats.LicenseStats map
 	store       *stor.DB
 }
 

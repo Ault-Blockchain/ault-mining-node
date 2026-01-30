@@ -108,9 +108,7 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 		LicenseStats: make(map[uint64]*LicenseStats),
 	}
 	for _, licenseID := range licenses {
-		stats.LicenseStats[licenseID] = &LicenseStats{
-			LicenseID: licenseID,
-		}
+		stats.LicenseStats[licenseID] = &LicenseStats{LicenseID: licenseID}
 	}
 
 	m := &MinerManager{
@@ -253,6 +251,15 @@ func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.Q
 
 	batchSize := config.Get().BatchSize
 
+	// Ensure stats exist for all eligible licenses
+	m.statsMu.Lock()
+	for _, licenseID := range eligibleLicenses {
+		if m.stats.LicenseStats[licenseID] == nil {
+			m.stats.LicenseStats[licenseID] = &LicenseStats{LicenseID: licenseID}
+		}
+	}
+	m.statsMu.Unlock()
+
 	// Process licenses in parallel and submit batches as soon as they're ready
 	resultsChan := make(chan *minertypes.WorkSubmission, len(eligibleLicenses))
 	var processWg sync.WaitGroup
@@ -343,8 +350,10 @@ func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uin
 	// and chain will validate eligibility on submission anyway.
 	// This avoids N gRPC queries per epoch (where N = number of licenses).
 
-	// Get stats for this license (map is read-only after init, so safe)
+	// Get stats for this license
+	m.statsMu.RLock()
 	stats := m.stats.LicenseStats[licenseID]
+	m.statsMu.RUnlock()
 	if stats != nil {
 		atomic.AddUint64(&stats.VrfAttempts, 1)
 		atomic.StoreUint64(&stats.CurrentEpoch, epochInfo.Epoch)
@@ -475,11 +484,13 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 			log.Printf("⏱️  VRF key is too young - must wait a few epochs after registration before mining")
 		} else if strings.Contains(err.Error(), "confirmation failed") {
 			// Transaction was submitted but not confirmed - still count as submission
+			m.statsMu.RLock()
 			for _, result := range workResults {
 				if stats := m.stats.LicenseStats[result.LicenseId]; stats != nil {
 					atomic.AddUint64(&stats.Submissions, 1)
 				}
 			}
+			m.statsMu.RUnlock()
 			atomic.AddUint64(&m.stats.TotalSubmissions, uint64(len(workResults)))
 			log.Printf("💡 Transaction submitted but confirmation timed out - check tx status manually")
 		} else {
@@ -489,11 +500,13 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 	}
 
 	// Update submission stats (using atomics)
+	m.statsMu.RLock()
 	for _, result := range workResults {
 		if stats := m.stats.LicenseStats[result.LicenseId]; stats != nil {
 			atomic.AddUint64(&stats.Submissions, 1)
 		}
 	}
+	m.statsMu.RUnlock()
 	atomic.AddUint64(&m.stats.TotalSubmissions, uint64(len(workResults)))
 	log.Printf("✅ Successfully submitted batch work for %d licenses in epoch %d", len(workResults), workResults[0].Epoch)
 	if m.store != nil {

@@ -46,7 +46,7 @@ type MiningStats struct {
 	TotalAttempts      uint64                   `json:"total_attempts"`       // Use atomic.AddUint64 / atomic.LoadUint64
 	TotalWins          uint64                   `json:"total_wins"`           // Use atomic.AddUint64 / atomic.LoadUint64
 	TotalSubmissions   uint64                   `json:"total_submissions"`    // Use atomic.AddUint64 / atomic.LoadUint64
-	LicenseStats       map[uint64]*LicenseStats `json:"license_stats"`        // Read-only after initialization
+	LicenseStats       map[uint64]*LicenseStats `json:"license_stats"`        // Protected by MinerManager.statsMu
 }
 
 // LicenseStats tracks mining statistics for a single license (thread-safe via atomics)
@@ -73,7 +73,8 @@ func (m *MinerManager) GetStats() MiningStats {
 		LicenseStats:       make(map[uint64]*LicenseStats),
 	}
 
-	// Copy license stats (map is read-only, stats use atomics)
+	// Copy license stats with read lock
+	m.statsMu.RLock()
 	for id, ls := range m.stats.LicenseStats {
 		stats.LicenseStats[id] = &LicenseStats{
 			LicenseID:    ls.LicenseID,
@@ -85,6 +86,7 @@ func (m *MinerManager) GetStats() MiningStats {
 			CurrentEpoch: atomic.LoadUint64(&ls.CurrentEpoch),
 		}
 	}
+	m.statsMu.RUnlock()
 
 	return stats
 }
@@ -92,11 +94,6 @@ func (m *MinerManager) GetStats() MiningStats {
 // GetStartTime returns the start time of the mining session
 func (s *MiningStats) GetStartTime() time.Time {
 	return s.StartTime
-}
-
-// GetLicenseStats returns the license statistics map
-func (s *MiningStats) GetLicenseStats() map[uint64]*LicenseStats {
-	return s.LicenseStats
 }
 
 // GetLicenseID returns the license ID
