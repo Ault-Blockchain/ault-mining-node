@@ -45,9 +45,8 @@ pkg/
     pow.go               # Micro proof-of-work solver
     stats.go             # Mining statistics tracking
 internal/
-  config/config.go       # Viper-based configuration from env vars
-  storage/storage.go     # SQLite persistence (GORM) for submissions and rewards
-api/server.go            # Fiber REST API server for monitoring
+  config/config.go       # Configuration from env vars
+  storage/keystore.go    # File-based key storage for auto mode
 ```
 
 ## Key Patterns
@@ -72,9 +71,7 @@ Optional:
 - `CHAIN_GRPC` - default: localhost:9090
 - `CHAIN_RPC` - default: tcp://localhost:26657
 - `CHAIN_ID` - default: ault_20904-1
-- `MINER_API_PORT` - default: 8080
 - `MINER_BATCH_SIZE` - default: 1000 (max submissions per batch, 0 = fallback 1000)
-- `MINER_DISABLE_DB` - default: false (set to "true" or "1" to disable SQLite storage)
 
 ## Dependencies
 
