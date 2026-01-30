@@ -24,3 +24,6 @@ minerd
 delegation_logs
 mint_logs
 license_data/
+
+# Tests (excluded from release branch)
+tests/
