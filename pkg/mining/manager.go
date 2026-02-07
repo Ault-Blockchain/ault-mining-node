@@ -106,15 +106,6 @@ func NewMinerManager(chainClient ChainClient) (*MinerManager, error) {
 		}
 	}
 
-	// For each license, if miner info has a VRF pubkey, ensure it matches local owner key
-	for _, lid := range licenses {
-		if info, err := chainClient.GetLicenseMinerInfo(context.Background(), lid); err == nil && len(info.VrfPubkey) == 32 {
-			if !bytes.Equal(info.VrfPubkey, vrfPubKey) {
-				log.Printf("Warning: license %d VRF key differs from local owner key; ensure correct owner is configured", lid)
-			}
-		}
-	}
-
 	return m, nil
 }
 
