@@ -22,5 +22,11 @@ aultmined-*
 Thumbs.db
 minerd
 delegation_logs
+redelegation_logs
 mint_logs
+
+vrf_setup_logs/
 license_data/
+
+# Keyring cache
+.keyring_cache/

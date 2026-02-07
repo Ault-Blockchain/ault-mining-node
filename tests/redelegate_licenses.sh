@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Usage: ./delegate_licenses.sh
+# Usage: ./redelegate_licenses.sh
 #
-# Delegates licenses from license holders to operators
+# Redelegates already-delegated licenses to operators with even distribution
 
 
 # Trap Ctrl+C to kill all background processes
@@ -73,7 +73,7 @@ for i in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
   HOLDER_KEYS+=("licenseholder$i")
 done
 
-echo "=== License Delegation Setup ==="
+echo "=== License Redelegation Setup ==="
 echo "License holders: $LICENSE_HOLDER_COUNT"
 echo "Operators: $OPERATOR_COUNT"
 echo "Batch size: $DELEGATION_BATCH_SIZE"
@@ -82,13 +82,13 @@ echo "Chain ID: $CHAIN_ID"
 echo "(Using cached keyring data)"
 echo ""
 
-# Step 1: Delegate licenses from each holder to operators (in parallel)
-echo "Step 1: Delegate licenses from each holder to operators"
+# Step 1: Redelegate licenses from each holder to operators (in parallel)
+echo "Step 1: Redelegate licenses from each holder to operators"
 echo "  Running $LICENSE_HOLDER_COUNT holders in parallel..."
 echo ""
 
 # Create log directory (clean previous logs)
-LOG_DIR="$SCRIPT_DIR/delegation_logs"
+LOG_DIR="$SCRIPT_DIR/redelegation_logs"
 rm -rf "$LOG_DIR"
 mkdir -p "$LOG_DIR"
 
@@ -96,10 +96,10 @@ mkdir -p "$LOG_DIR"
 export KEYRING_BACKEND KEYRING_DIR CHAIN_RPC CHAIN_ID
 export DEFAULT_MAX_GAS_LIMIT DELEGATION_BATCH_SIZE RATE_LIMIT_PER_EPOCH EPOCH_WAIT_TIME
 
-# Function to delegate for a single holder (runs in background)
-# Queries licenses from node page by page, delegates each batch immediately
+# Function to redelegate for a single holder (runs in background)
+# Queries licenses from node page by page, redelegates each batch immediately
 # Arguments: holder_idx, holder_key, holder_addr, operator_addrs_csv, start_op_idx
-delegate_for_holder() {
+redelegate_for_holder() {
   local holder_idx=$1
   local holder_key=$2
   local holder_addr=$3
@@ -150,12 +150,12 @@ delegate_for_holder() {
     if [ "$page_count" = "0" ] || [ -z "$page_csv" ]; then
       # No more pages - delegate whatever is accumulated
       if [ $accumulated_count -gt 0 ]; then
-        echo "[Holder $holder_idx] Last batch: delegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
+        echo "[Holder $holder_idx] Last batch: redelegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
         local operator_addr="${OP_ADDRS[$op_idx]}"
         op_idx=$(( (op_idx + 1) % op_count ))
         local batch_gas=$((accumulated_count * DEFAULT_MAX_GAS_LIMIT))
 
-        local tx_result=$(echo "y" | aultd tx miner delegate-mining "$accumulated_csv" "$operator_addr" \
+        local tx_result=$(echo "y" | aultd tx miner redelegate-mining "$accumulated_csv" "$operator_addr" \
           --from "$holder_key" \
           --keyring-backend "$KEYRING_BACKEND" \
           --home "$KEYRING_DIR" \
@@ -170,14 +170,15 @@ delegate_for_holder() {
         local tx_hash=$(echo "$tx_result" | jq -r '.txhash // empty' 2>/dev/null)
         local tx_code=$(echo "$tx_result" | jq -r '.code // 0' 2>/dev/null)
         if [ -z "$tx_hash" ] || [ "$tx_code" != "0" ]; then
-          echo "[Holder $holder_idx] TX failed (code: $tx_code), skipping..." >> "$log_file"
+          echo "[Holder $holder_idx] TX failed (code: $tx_code), continuing..." >> "$log_file"
+          echo "[Holder $holder_idx] (Expected if some licenses already delegated to this operator)" >> "$log_file"
           echo "$tx_result" >> "$log_file"
         else
           echo "[Holder $holder_idx] -> TX: $tx_hash" >> "$log_file"
         fi
         tx_count=$((tx_count + 1))
       fi
-      echo "[Holder $holder_idx] No more licenses to delegate" >> "$log_file"
+      echo "[Holder $holder_idx] No more licenses to redelegate" >> "$log_file"
       break
     fi
 
@@ -196,11 +197,11 @@ delegate_for_holder() {
       local operator_addr="${OP_ADDRS[$op_idx]}"
       op_idx=$(( (op_idx + 1) % op_count ))
 
-      echo "[Holder $holder_idx] Delegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
+      echo "[Holder $holder_idx] Redelegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
 
       local batch_gas=$((accumulated_count * DEFAULT_MAX_GAS_LIMIT))
 
-      local tx_result=$(echo "y" | aultd tx miner delegate-mining "$accumulated_csv" "$operator_addr" \
+      local tx_result=$(echo "y" | aultd tx miner redelegate-mining "$accumulated_csv" "$operator_addr" \
         --from "$holder_key" \
         --keyring-backend "$KEYRING_BACKEND" \
         --home "$KEYRING_DIR" \
@@ -216,7 +217,8 @@ delegate_for_holder() {
       local tx_code=$(echo "$tx_result" | jq -r '.code // 0' 2>/dev/null)
 
       if [ -z "$tx_hash" ] || [ "$tx_code" != "0" ]; then
-        echo "[Holder $holder_idx] TX failed (code: $tx_code), skipping..." >> "$log_file"
+        echo "[Holder $holder_idx] TX failed (code: $tx_code), continuing..." >> "$log_file"
+          echo "[Holder $holder_idx] (Expected if some licenses already delegated to this operator)" >> "$log_file"
         echo "$tx_result" >> "$log_file"
       else
         echo "[Holder $holder_idx] -> TX: $tx_hash" >> "$log_file"
@@ -243,10 +245,10 @@ delegate_for_holder() {
         local operator_addr="${OP_ADDRS[$op_idx]}"
         op_idx=$(( (op_idx + 1) % op_count ))
 
-        echo "[Holder $holder_idx] Last batch: delegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
+        echo "[Holder $holder_idx] Last batch: redelegating $accumulated_count licenses to Operator $((op_idx))..." >> "$log_file"
         local batch_gas=$((accumulated_count * DEFAULT_MAX_GAS_LIMIT))
 
-        local tx_result=$(echo "y" | aultd tx miner delegate-mining "$accumulated_csv" "$operator_addr" \
+        local tx_result=$(echo "y" | aultd tx miner redelegate-mining "$accumulated_csv" "$operator_addr" \
           --from "$holder_key" \
           --keyring-backend "$KEYRING_BACKEND" \
           --home "$KEYRING_DIR" \
@@ -261,7 +263,8 @@ delegate_for_holder() {
         local tx_hash=$(echo "$tx_result" | jq -r '.txhash // empty' 2>/dev/null)
         local tx_code=$(echo "$tx_result" | jq -r '.code // 0' 2>/dev/null)
         if [ -z "$tx_hash" ] || [ "$tx_code" != "0" ]; then
-          echo "[Holder $holder_idx] TX failed (code: $tx_code), skipping..." >> "$log_file"
+          echo "[Holder $holder_idx] TX failed (code: $tx_code), continuing..." >> "$log_file"
+          echo "[Holder $holder_idx] (Expected if some licenses already delegated to this operator)" >> "$log_file"
           echo "$tx_result" >> "$log_file"
         else
           echo "[Holder $holder_idx] -> TX: $tx_hash" >> "$log_file"
@@ -280,10 +283,10 @@ delegate_for_holder() {
 # Build operator addresses as pipe-separated string for passing to function
 OPERATOR_ADDRS_CSV=$(IFS='|'; echo "${OPERATOR_ADDRS[*]}")
 
-# Step 2: Delegate licenses from each holder to operators (parallel with staggered start)
-# Each holder queries its own licenses from the node and delegates page by page
+# Step 2: Redelegate licenses from each holder to operators (parallel with staggered start)
+# Each holder queries its own licenses from the node and redelegates page by page
 STAGGER_DELAY=5
-echo "Step 2: Launch parallel delegation"
+echo "Step 2: Launch parallel redelegation"
 echo "  Running $LICENSE_HOLDER_COUNT holders in parallel (${STAGGER_DELAY}s stagger)..."
 echo ""
 
@@ -303,7 +306,7 @@ for holder_idx in $(seq 0 $((LICENSE_HOLDER_COUNT-1))); do
 
   echo "  Starting holder $holder_idx ($holder_key) -> op_idx $start_op_idx"
 
-  delegate_for_holder "$holder_idx" "$holder_key" "$holder_addr" "$OPERATOR_ADDRS_CSV" "$start_op_idx" &
+  redelegate_for_holder "$holder_idx" "$holder_key" "$holder_addr" "$OPERATOR_ADDRS_CSV" "$start_op_idx" &
   PIDS+=($!)
 
   if [ $holder_idx -lt $((LICENSE_HOLDER_COUNT-1)) ]; then
@@ -336,19 +339,19 @@ done
 
 if [ "$FAILED" = true ]; then
   echo ""
-  echo "Some delegations failed. Check logs in $LOG_DIR/"
+  echo "Some redelegations failed. Check logs in $LOG_DIR/"
   exit 1
 fi
 
 echo ""
-echo "=== Delegation Complete ==="
+echo "=== Redelegation Complete ==="
 echo ""
 echo "Operators:"
 for op_idx in $(seq 0 $((OPERATOR_COUNT-1))); do
   echo "  Operator $((op_idx+1)): ${OPERATOR_ADDRS[$op_idx]}"
 done
 echo ""
-echo "Note: Delegations will be active from the next epoch"
+echo "Note: Redelegations will be active from the next epoch"
 echo ""
 echo "Next step:"
 echo "  Run ./start_miner_client.sh to start mining"
