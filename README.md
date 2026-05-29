@@ -8,8 +8,7 @@ A production-ready mining client for the Ault blockchain. Uses VRF-based mining 
 - **Multi-License Support**: Mine with multiple licenses (owned or delegated)
 - **VRF-Based Mining**: Secure random number generation for fair mining
 - **Auto-Detection**: Automatically detects owned and delegated licenses
-- **REST API**: Built-in API for monitoring and status checks
-- **SQLite Storage**: Persistent storage for submissions and rewards tracking
+- **REST API**: Built-in health check endpoint
 
 ## Quick Start
 
@@ -68,12 +67,11 @@ See **[Fly.io Deployment Guide](docs/FLY_DEPLOYMENT.md)**.
 | -------------------- | -------- | ----------------------- | ------------------------------------------- | -------------------------------------- |
 | `MINER_OPERATOR_KEY` | No\*     | -                       | -                                           | Account private key (hex, secp256k1)   |
 | `MINER_VRF_KEY`      | No\*     | -                       | -                                           | VRF private key (hex, Ed25519)         |
-| `CHAIN_GRPC`         | No       | `localhost:9090`        | `test-grpc.cloud.aultblockchain.xyz:9090`   | gRPC endpoint                          |
-| `CHAIN_RPC`          | No       | `tcp://localhost:26657` | `https://test-rpc.cloud.aultblockchain.xyz` | RPC endpoint                           |
+| `CHAIN_GRPC`         | No       | `localhost:9090`        | `test-grpc.cloud.aultblockchain.xyz:9090`   | gRPC endpoint(s), comma-separated for fallback |
+| `CHAIN_RPC`          | No       | `tcp://localhost:26657` | `https://test-rpc.cloud.aultblockchain.xyz` | RPC endpoint(s), comma-separated for fallback  |
 | `CHAIN_ID`           | No       | `ault_20904-1`          | `ault_10904-1`                              | Chain identifier                       |
 | `MINER_API_PORT`     | No       | `8080`                  | -                                           | REST API port                          |
 | `MINER_BATCH_SIZE`   | No       | `1000`                  | -                                           | Max submissions per batch              |
-| `MINER_DISABLE_DB`   | No       | `false`                 | -                                           | Disable SQLite storage ("true" or "1") |
 | `MINER_DATA_DIR`     | No       | `data`                  | `/data`                                     | Directory for auto-generated keys      |
 
 \*If both `MINER_OPERATOR_KEY` and `MINER_VRF_KEY` are unset, auto mode is enabled and keys are auto-generated.

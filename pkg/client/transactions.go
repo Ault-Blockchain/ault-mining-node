@@ -64,7 +64,7 @@ func (c *ChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonc
 	var pop []byte
 	if autoPoP {
 		// Query the current epoch from the chain
-		epochRes, err := c.queryClient.Epoch(ctx, &minertypes.QueryEpochRequest{})
+		epochRes, err := c.GetCurrentEpoch(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to query current epoch: %w", err)
 		}
@@ -133,123 +133,127 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 		lastErr error
 	)
 
-	for attempt := 0; attempt <= txMaxRetries; attempt++ {
-		// Check free gas eligibility FIRST with original gas limit
-		// This must be done before gas adjustment to stay within FreeMiningMaxGasLimit
-		var estGas uint64
-		var fees sdk.Coins
-		var floor sdkmath.LegacyDec
-		var simGas uint64
-		useFreeGas := c.isFreeGasEligible(ctx, gasLimit, submissionCount)
+	for endpointAttempt := 0; endpointAttempt < len(c.grpcEndpoints); endpointAttempt++ {
+		for attempt := 0; attempt <= txMaxRetries; attempt++ {
+			// Check free gas eligibility FIRST with original gas limit
+			// This must be done before gas adjustment to stay within FreeMiningMaxGasLimit
+			var estGas uint64
+			var fees sdk.Coins
+			var floor sdkmath.LegacyDec
+			var simGas uint64
+			useFreeGas := c.isFreeGasEligible(ctx, gasLimit, submissionCount)
 
-		if useFreeGas {
-			// Use original gas limit to stay within free gas limit (no 1.2x adjustment)
-			estGas = gasLimit
-			simGas = gasLimit
-			fees = sdk.NewCoins()
-		} else {
-			// Simulate gas and apply adjustment for paid transactions
-			var simErr error
-			simGas, simErr = c.simulateGas(ctx, fromAddr, msg)
-			if simErr != nil {
-				simGas = gasLimit
-			}
-			estGas = uint64(float64(simGas)*txGasAdjustment + 0.9999)
-			if estGas < gasLimit {
-				estGas = gasLimit
-			}
-			var feeErr error
-			fees, floor, feeErr = c.computeFees(estGas)
-			if feeErr != nil {
-				return "", feeErr
-			}
-		}
-
-		// Build tx fresh each attempt
-		builder := c.txConfig.NewTxBuilder()
-		if err := builder.SetMsgs(msg); err != nil {
-			return "", fmt.Errorf("failed to set msg: %w", err)
-		}
-		builder.SetGasLimit(estGas)
-		builder.SetFeeAmount(fees)
-
-		// Sign using private key
-		extBuilder, ok := builder.(authtx.ExtensionOptionsTxBuilder)
-		if !ok {
-			return "", fmt.Errorf("tx builder does not support extensions")
-		}
-		if err := c.signTx(extBuilder, c.nextSeq); err != nil {
-			return "", fmt.Errorf("failed to sign tx: %w", err)
-		}
-
-		// Encode and broadcast with timeout
-		txBytes, err := c.txConfig.TxEncoder()(builder.GetTx())
-		if err != nil {
-			return "", fmt.Errorf("failed to encode tx: %w", err)
-		}
-
-		// Precompute tx hash for idempotency checks on network errors
-		preHash := fmt.Sprintf("%X", tmhash.Sum(txBytes))
-		mode := txtypes.BroadcastMode_BROADCAST_MODE_SYNC
-
-		// Concise logging of gas/fees/mode/seq
-		if attempt == 0 {
 			if useFreeGas {
-				log.Printf("tx gas: used=%d fee=FREE mode=%s seq=%d", estGas, mode.String(), c.nextSeq)
-			} else if !floor.IsZero() {
-				log.Printf("tx gas: sim=%d adj=%.2f used=%d fee=%s floor=%s mode=%s seq=%d", simGas, txGasAdjustment, estGas, fees.String(), floor.String(), mode.String(), c.nextSeq)
+				// Use original gas limit to stay within free gas limit (no 1.2x adjustment)
+				estGas = gasLimit
+				simGas = gasLimit
+				fees = sdk.NewCoins()
 			} else {
-				log.Printf("tx gas: sim=%d adj=%.2f used=%d fee=%s mode=%s seq=%d", simGas, txGasAdjustment, estGas, fees.String(), mode.String(), c.nextSeq)
-			}
-		} else {
-			log.Printf("retry #%d: gas used=%d fee=%s mode=%s seq=%d", attempt, estGas, fees.String(), mode.String(), c.nextSeq)
-		}
-		bctx, cancel := context.WithTimeout(ctx, txTimeout)
-		defer cancel()
-		resp, err := c.txClient.BroadcastTx(bctx, &txtypes.BroadcastTxRequest{TxBytes: txBytes, Mode: mode})
-		if err != nil {
-			lastErr = fmt.Errorf("broadcast error: %w", err)
-			if ok, derr := c.detectDelivered(bctx, preHash); derr == nil && ok {
-				return preHash, nil
-			}
-		} else if resp.TxResponse != nil {
-			if resp.TxResponse.Code == 0 {
-				c.nextSeq++
-				return resp.TxResponse.TxHash, nil
+				// Simulate gas and apply adjustment for paid transactions
+				var simErr error
+				simGas, simErr = c.simulateGas(ctx, fromAddr, msg)
+				if simErr != nil {
+					simGas = gasLimit
+				}
+				estGas = uint64(float64(simGas)*txGasAdjustment + 0.9999)
+				if estGas < gasLimit {
+					estGas = gasLimit
+				}
+				var feeErr error
+				fees, floor, feeErr = c.computeFees(estGas)
+				if feeErr != nil {
+					return "", feeErr
+				}
 			}
 
-			raw := resp.TxResponse.RawLog
-			if expected, got, ok := parseSequenceMismatch(raw); ok {
-				c.nextSeq = expected
-				lastErr = fmt.Errorf("sequence mismatch (expected %d, got %d)", expected, got)
-			} else if isOutOfGas(raw) {
-				gasLimit = uint64(float64(estGas)*1.3 + 0.9999)
-				log.Printf("out of gas reported; increasing gas to %d and retrying", gasLimit)
-				lastErr = fmt.Errorf("out of gas, retrying with higher limit")
-			} else if isDuplicateTx(raw) {
-				txHash = resp.TxResponse.TxHash
-				if txHash == "" {
-					txHash = preHash
+			// Build tx fresh each attempt
+			builder := c.txConfig.NewTxBuilder()
+			if err := builder.SetMsgs(msg); err != nil {
+				return "", fmt.Errorf("failed to set msg: %w", err)
+			}
+			builder.SetGasLimit(estGas)
+			builder.SetFeeAmount(fees)
+
+			// Sign using private key
+			extBuilder, ok := builder.(authtx.ExtensionOptionsTxBuilder)
+			if !ok {
+				return "", fmt.Errorf("tx builder does not support extensions")
+			}
+			if err := c.signTx(extBuilder, c.nextSeq); err != nil {
+				return "", fmt.Errorf("failed to sign tx: %w", err)
+			}
+
+			// Encode and broadcast with timeout
+			txBytes, err := c.txConfig.TxEncoder()(builder.GetTx())
+			if err != nil {
+				return "", fmt.Errorf("failed to encode tx: %w", err)
+			}
+
+			// Precompute tx hash for idempotency checks on network errors
+			preHash := fmt.Sprintf("%X", tmhash.Sum(txBytes))
+			mode := txtypes.BroadcastMode_BROADCAST_MODE_SYNC
+
+			// Concise logging of gas/fees/mode/seq
+			if attempt == 0 {
+				if useFreeGas {
+					log.Printf("tx gas: used=%d fee=FREE mode=%s seq=%d", estGas, mode.String(), c.nextSeq)
+				} else if !floor.IsZero() {
+					log.Printf("tx gas: sim=%d adj=%.2f used=%d fee=%s floor=%s mode=%s seq=%d", simGas, txGasAdjustment, estGas, fees.String(), floor.String(), mode.String(), c.nextSeq)
+				} else {
+					log.Printf("tx gas: sim=%d adj=%.2f used=%d fee=%s mode=%s seq=%d", simGas, txGasAdjustment, estGas, fees.String(), mode.String(), c.nextSeq)
 				}
-				if werr := c.waitForTxConfirmation(ctx, txHash); werr == nil {
+			} else {
+				log.Printf("retry #%d: gas used=%d fee=%s mode=%s seq=%d", attempt, estGas, fees.String(), mode.String(), c.nextSeq)
+			}
+			bctx, cancel := context.WithTimeout(ctx, txTimeout)
+			defer cancel()
+			resp, err := c.txClient.BroadcastTx(bctx, &txtypes.BroadcastTxRequest{TxBytes: txBytes, Mode: mode})
+			if err != nil {
+				lastErr = fmt.Errorf("broadcast error: %w", err)
+				if ok, derr := c.detectDelivered(bctx, preHash); derr == nil && ok {
+					return preHash, nil
+				}
+			} else if resp.TxResponse != nil {
+				if resp.TxResponse.Code == 0 {
 					c.nextSeq++
-					return txHash, nil
+					return resp.TxResponse.TxHash, nil
 				}
-				lastErr = fmt.Errorf("duplicate tx reported but not confirmed yet")
-			} else {
-				lastErr = fmt.Errorf("tx failed code=%d: %s", resp.TxResponse.Code, raw)
-			}
-		} else {
-			lastErr = fmt.Errorf("empty tx response")
-		}
 
-		// Decide whether to retry
-		if attempt < txMaxRetries {
-			_ = c.refreshAccountSequence(ctx, fromAddr, true)
-			time.Sleep(txRetryDelay)
-			continue
+				raw := resp.TxResponse.RawLog
+				if expected, got, ok := parseSequenceMismatch(raw); ok {
+					c.nextSeq = expected
+					lastErr = fmt.Errorf("sequence mismatch (expected %d, got %d)", expected, got)
+				} else if isOutOfGas(raw) {
+					gasLimit = uint64(float64(estGas)*1.3 + 0.9999)
+					log.Printf("out of gas reported; increasing gas to %d and retrying", gasLimit)
+					lastErr = fmt.Errorf("out of gas, retrying with higher limit")
+				} else if isDuplicateTx(raw) {
+					txHash = resp.TxResponse.TxHash
+					if txHash == "" {
+						txHash = preHash
+					}
+					if werr := c.waitForTxConfirmation(ctx, txHash); werr == nil {
+						c.nextSeq++
+						return txHash, nil
+					}
+					lastErr = fmt.Errorf("duplicate tx reported but not confirmed yet")
+				} else {
+					lastErr = fmt.Errorf("tx failed code=%d: %s", resp.TxResponse.Code, raw)
+				}
+			} else {
+				lastErr = fmt.Errorf("empty tx response")
+			}
+
+			// Decide whether to retry
+			if attempt < txMaxRetries {
+				_ = c.refreshAccountSequence(ctx, fromAddr, true)
+				time.Sleep(txRetryDelay)
+				continue
+			}
 		}
-		break
+		if !c.switchToNextGRPCEndpoint() {
+			break
+		}
 	}
 
 	if lastErr != nil {

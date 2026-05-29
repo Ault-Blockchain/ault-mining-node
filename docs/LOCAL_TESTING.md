@@ -139,15 +139,6 @@ sleep 5
 
 # Health check
 curl http://localhost:8080/health | jq
-
-# Status
-curl http://localhost:8080/v1/status | jq
-
-# Submissions
-curl http://localhost:8080/v1/submissions | jq
-
-# Rewards (after some epochs)
-curl "http://localhost:8080/v1/rewards?license_id=1" | jq
 ```
 
 ## Environment Variables
@@ -156,12 +147,11 @@ curl "http://localhost:8080/v1/rewards?license_id=1" | jq
 | -------------------- | ----------------------- | ----------------------------------------------- |
 | `MINER_OPERATOR_KEY` | (required)              | Account private key (hex)                       |
 | `MINER_VRF_KEY`      | (required)              | VRF private key (hex)                           |
-| `CHAIN_GRPC`         | `localhost:9090`        | gRPC endpoint                                   |
-| `CHAIN_RPC`          | `tcp://localhost:26657` | RPC endpoint                                    |
+| `CHAIN_GRPC`         | `localhost:9090`        | gRPC endpoint(s), comma-separated for fallback  |
+| `CHAIN_RPC`          | `tcp://localhost:26657` | RPC endpoint(s), comma-separated for fallback   |
 | `CHAIN_ID`           | `ault_20904-1`          | Chain identifier                                |
 | `MINER_API_PORT`     | `8080`                  | API server port                                 |
 | `MINER_BATCH_SIZE`   | `1000`                  | Max submissions per batch (<=0 = fallback 1000) |
-| `MINER_DISABLE_DB`   | `false`                 | Disable SQLite storage ("true" or "1")          |
 
 ## Useful Commands
 
@@ -260,5 +250,4 @@ go test -v ./pkg/mining/...
 ## Development Tips
 
 1. **Fast epoch testing**: Modify genesis params for shorter epochs
-2. **Database inspection**: `sqlite3 miner.db ".tables"` and `sqlite3 miner.db "SELECT * FROM submissions;"`
 3. **API debugging**: Use `curl -v` for verbose output

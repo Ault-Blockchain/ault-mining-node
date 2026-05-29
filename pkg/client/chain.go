@@ -43,6 +43,11 @@ import (
 	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
+const (
+	rpcMaxRetries = 3
+	rpcRetryDelay = 500 * time.Millisecond
+)
+
 // NewChainClient creates a new chain client with connection management.
 // It reads the operator key from the MINER_OPERATOR_KEY environment variable.
 func NewChainClient() (*ChainClient, error) {
@@ -56,11 +61,14 @@ func NewChainClient() (*ChainClient, error) {
 // NewChainClientWithKey creates a chain client using an explicit operator key (for auto mode)
 func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 	cfg := config.Get()
-	grpcEndpoint, useTLS, serverName, err := normalizeGRPCEndpoint(cfg.GRPCEndpoint)
+	grpcEndpoints, err := parseGRPCEndpoints(cfg.GRPCEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	rpcEndpoint := cfg.RPCEndpoint
+	rpcEndpoints, err := parseRPCEndpoints(cfg.RPCEndpoint)
+	if err != nil {
+		return nil, err
+	}
 
 	if operatorKeyHex == "" {
 		return nil, fmt.Errorf("operator key is required")
@@ -91,36 +99,7 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 	// Tx config for building/signing transactions
 	txCfg := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
 
-	// Connect with retry and keep-alive options
-	var transportCreds credentials.TransportCredentials
-	if useTLS {
-		transportCreds = credentials.NewTLS(&tls.Config{ServerName: serverName})
-	} else {
-		transportCreds = insecure.NewCredentials()
-	}
-
-	conn, err := grpc.NewClient(
-		grpcEndpoint,
-		grpc.WithTransportCredentials(transportCreds),
-		grpc.WithDefaultCallOptions(
-			grpc.ForceCodec(protoCodec.GRPCCodec()),
-			grpc.MaxCallRecvMsgSize(10*1024*1024),
-		),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                10 * time.Second,
-			Timeout:             3 * time.Second,
-			PermitWithoutStream: true,
-		}),
-		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff: backoff.Config{
-				BaseDelay:  1.0 * time.Second,
-				Multiplier: 1.5,
-				Jitter:     0.2,
-				MaxDelay:   10 * time.Second,
-			},
-			MinConnectTimeout: 5 * time.Second,
-		}),
-	)
+	conn, err := newGRPCConn(grpcEndpoints[0], protoCodec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to gRPC: %w", err)
 	}
@@ -132,8 +111,8 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 		authClient:        authtypes.NewQueryClient(conn),
 		txClient:          txtypes.NewServiceClient(conn),
 		feemarketClient:   feemarkettypes.NewQueryClient(conn),
-		grpcEndpoint:      grpcEndpoint,
-		rpcEndpoint:       rpcEndpoint,
+		grpcEndpoints:     grpcEndpoints,
+		rpcEndpoints:      rpcEndpoints,
 		chainID:           cfg.ChainID,
 		gasPrices:         gasPrices,
 		privKey:           privKey,
@@ -159,6 +138,8 @@ func (c *ChainClient) GetOwnerAddress() (sdk.AccAddress, error) {
 
 // Close closes the gRPC connection
 func (c *ChainClient) Close() {
+	c.endpointMu.Lock()
+	defer c.endpointMu.Unlock()
 	if c.grpcConn != nil {
 		c.grpcConn.Close()
 	}
@@ -242,7 +223,7 @@ func (c *ChainClient) waitForTxConfirmation(ctx context.Context, txHash string) 
 		maxAttempts  = 10 // 30s / 3s = 10
 	)
 
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		resp, err := c.txClient.GetTx(ctx, &txtypes.GetTxRequest{Hash: txHash})
 		if err == nil && resp != nil && resp.TxResponse != nil {
 			if resp.TxResponse.Code == 0 {
@@ -264,17 +245,23 @@ func (c *ChainClient) waitForTxConfirmation(ctx context.Context, txHash string) 
 
 // discoverChainID queries the node for the chain ID
 func (c *ChainClient) discoverChainID() (string, error) {
-	cli, err := cmthttp.New(c.rpcEndpoint, "/websocket")
-	if err != nil {
-		return "", err
+	var lastErr error
+	for _, endpoint := range c.rpcEndpoints {
+		cli, err := cmthttp.New(endpoint, "/websocket")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		status, err := cli.Status(ctx)
+		cancel()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return status.NodeInfo.Network, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	status, err := cli.Status(ctx)
-	if err != nil {
-		return "", err
-	}
-	return status.NodeInfo.Network, nil
+	return "", fmt.Errorf("all RPC endpoints failed: %w", lastErr)
 }
 
 // refreshAccountSequence refreshes account number and sequence from chain
@@ -283,9 +270,31 @@ func (c *ChainClient) refreshAccountSequence(ctx context.Context, addr sdk.AccAd
 		return nil
 	}
 
-	accRes, err := c.authClient.Account(ctx, &authtypes.QueryAccountRequest{Address: addr.String()})
-	if err != nil {
-		return fmt.Errorf("failed to query account: %w", err)
+	var accRes *authtypes.QueryAccountResponse
+	var lastErr error
+	for range len(c.grpcEndpoints) {
+		for range rpcMaxRetries {
+			var err error
+			accRes, err = c.authClient.Account(ctx, &authtypes.QueryAccountRequest{Address: addr.String()})
+			if err == nil {
+				lastErr = nil
+				break
+			}
+			lastErr = err
+			if ctx.Err() != nil {
+				return fmt.Errorf("failed to query account: %w", err)
+			}
+			time.Sleep(rpcRetryDelay)
+		}
+		if lastErr == nil {
+			break
+		}
+		if !c.switchToNextGRPCEndpoint() {
+			break
+		}
+	}
+	if lastErr != nil {
+		return fmt.Errorf("failed to query account: %w", lastErr)
 	}
 	var accI sdk.AccountI
 	if err := c.interfaceRegistry.UnpackAny(accRes.Account, &accI); err != nil {
@@ -446,6 +455,89 @@ var (
 	seqMismatchRe3 = regexp.MustCompile(`incorrect account sequence.*expected (\d+), got (\d+)`)
 )
 
+type grpcEndpointConfig struct {
+	endpoint   string
+	useTLS     bool
+	serverName string
+}
+
+func newGRPCConn(endpoint grpcEndpointConfig, protoCodec *codec.ProtoCodec) (*grpc.ClientConn, error) {
+	var transportCreds credentials.TransportCredentials
+	if endpoint.useTLS {
+		transportCreds = credentials.NewTLS(&tls.Config{ServerName: endpoint.serverName})
+	} else {
+		transportCreds = insecure.NewCredentials()
+	}
+
+	return grpc.NewClient(
+		endpoint.endpoint,
+		grpc.WithTransportCredentials(transportCreds),
+		grpc.WithDefaultCallOptions(
+			grpc.ForceCodec(protoCodec.GRPCCodec()),
+			grpc.MaxCallRecvMsgSize(10*1024*1024),
+		),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             3 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				BaseDelay:  1.0 * time.Second,
+				Multiplier: 1.5,
+				Jitter:     0.2,
+				MaxDelay:   10 * time.Second,
+			},
+			MinConnectTimeout: 5 * time.Second,
+		}),
+	)
+}
+
+func (c *ChainClient) switchToNextGRPCEndpoint() bool {
+	c.endpointMu.Lock()
+	defer c.endpointMu.Unlock()
+
+	if len(c.grpcEndpoints) <= 1 {
+		return false
+	}
+
+	protoCodec, ok := c.protoCodec.(*codec.ProtoCodec)
+	if !ok {
+		log.Printf("cannot switch gRPC endpoint: unexpected codec type %T", c.protoCodec)
+		return false
+	}
+
+	var lastErr error
+	for offset := 1; offset < len(c.grpcEndpoints); offset++ {
+		next := c.grpcEndpoints[offset]
+		conn, err := newGRPCConn(next, protoCodec)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		oldConn := c.grpcConn
+		oldEndpoint := c.grpcEndpoints[0].endpoint
+		c.grpcConn = conn
+		c.queryClient = minertypes.NewQueryClient(conn)
+		c.licenseClient = licensetypes.NewQueryClient(conn)
+		c.authClient = authtypes.NewQueryClient(conn)
+		c.txClient = txtypes.NewServiceClient(conn)
+		c.feemarketClient = feemarkettypes.NewQueryClient(conn)
+		c.grpcEndpoints = append(c.grpcEndpoints[offset:], c.grpcEndpoints[:offset]...)
+		log.Printf("switching gRPC endpoint from %s to %s", oldEndpoint, next.endpoint)
+		if oldConn != nil {
+			_ = oldConn.Close()
+		}
+		return true
+	}
+
+	if lastErr != nil {
+		log.Printf("failed to create fallback gRPC connection: %v", lastErr)
+	}
+	return false
+}
+
 func parseSequenceMismatch(raw string) (expected, got uint64, ok bool) {
 	if m := seqMismatchRe1.FindStringSubmatch(raw); len(m) == 3 {
 		exp, _ := strconv.ParseUint(m[1], 10, 64)
@@ -475,7 +567,51 @@ func isOutOfGas(raw string) bool {
 	return strings.Contains(s, "out of gas") || strings.Contains(s, "insufficient gas")
 }
 
-// normalizeGRPCEndpoint parses CHAIN_GRPC and returns host:port plus TLS hints.
+func parseGRPCEndpoints(raw string) ([]grpcEndpointConfig, error) {
+	parts := splitEndpointList(raw)
+	endpoints := make([]grpcEndpointConfig, 0, len(parts))
+	for _, part := range parts {
+		endpoint, useTLS, serverName, err := normalizeGRPCEndpoint(part)
+		if err != nil {
+			return nil, err
+		}
+		endpoints = append(endpoints, grpcEndpointConfig{
+			endpoint:   endpoint,
+			useTLS:     useTLS,
+			serverName: serverName,
+		})
+	}
+	if len(endpoints) == 0 {
+		return nil, fmt.Errorf("gRPC endpoint is empty")
+	}
+	return endpoints, nil
+}
+
+func parseRPCEndpoints(raw string) ([]string, error) {
+	parts := splitEndpointList(raw)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("RPC endpoint is empty")
+	}
+	return parts, nil
+}
+
+func splitEndpointList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	endpoints := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			endpoints = append(endpoints, part)
+		}
+	}
+	return endpoints
+}
+
+// normalizeGRPCEndpoint parses a CHAIN_GRPC entry and returns host:port plus TLS hints.
 func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName string, err error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

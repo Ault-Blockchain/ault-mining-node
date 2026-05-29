@@ -20,6 +20,7 @@ import (
 
 	"github.com/cosmos/evm/crypto/ethsecp256k1"
 
+	"github.com/Ault-Blockchain/ault-miner-node/api"
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
 	"github.com/Ault-Blockchain/ault-miner-node/internal/storage"
 	"github.com/Ault-Blockchain/ault-miner-node/pkg/client"
@@ -229,21 +230,20 @@ func setKeyCmd() *cobra.Command {
 }
 
 // getVRFPubKeyHex derives the VRF public key hex from the private key hex.
-// Returns empty string on any error (non-fatal for status display).
 func getVRFPubKeyHex(vrfKeyHex string) string {
 	vrfPrivBytes, err := hex.DecodeString(vrfKeyHex)
 	if err != nil {
-		log.Printf("Warning: failed to decode VRF key for status: %v", err)
+		log.Printf("Warning: failed to decode VRF key: %v", err)
 		return ""
 	}
 	vrfPrivKey, err := ecvrf.NewPrivateKey(vrfPrivBytes)
 	if err != nil {
-		log.Printf("Warning: failed to create VRF private key for status: %v", err)
+		log.Printf("Warning: failed to create VRF private key: %v", err)
 		return ""
 	}
 	vrfPubKey, err := vrfPrivKey.Public()
 	if err != nil {
-		log.Printf("Warning: failed to derive VRF public key for status: %v", err)
+		log.Printf("Warning: failed to derive VRF public key: %v", err)
 		return ""
 	}
 	return hex.EncodeToString(vrfPubKey.Bytes())
@@ -344,15 +344,34 @@ func mineCmd() *cobra.Command {
 				cancel()
 			}()
 
+			// Start API server FIRST (for health checks)
+			apiAddr := ":" + cfg.APIPort
+
+			// Create a minimal API server that works before manager is ready.
+			apiServer := api.New()
+
+			go func() {
+				log.Printf("Starting API server on %s", apiAddr)
+				if err := apiServer.Start(apiAddr); err != nil {
+					log.Printf("API server error: %v", err)
+				}
+			}()
+
+			defer func() {
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer shutdownCancel()
+				if err := apiServer.Shutdown(shutdownCtx); err != nil {
+					log.Printf("API server shutdown error: %v", err)
+				}
+			}()
+
 			// AUTO MODE: Wait for delegation, register VRF, then mine
 			if cfg.AutoMode {
-				// Get VRF public key for status reporting
+				// Get VRF public key for registration checks.
 				vrfPubKeyHex := getVRFPubKeyHex(vrfKeyHex)
-				evmAddr := common.BytesToAddress([]byte(ownerAddr))
 
 				log.Println("Waiting for license delegation...")
 				log.Printf("Delegate licenses to: %s", ownerAddr.String())
-				log.Printf("EVM address: %s", evmAddr.Hex())
 				log.Printf("VRF public key: %s", vrfPubKeyHex)
 
 				// Background loop: wait for delegation -> register VRF -> mine

@@ -42,7 +42,7 @@ fly launch --no-deploy
 fly deploy
 ```
 
-A 4GB persistent volume is automatically created on first deploy to store keys and the SQLite database.
+A persistent volume is automatically created on first deploy to store auto-generated keys.
 
 The miner will:
 
@@ -53,25 +53,17 @@ The miner will:
 ### Step 3: Get Your Operator Address
 
 ```bash
-curl https://<your-app>.fly.dev/v1/operator
+fly logs
 ```
 
-Response:
+Look for the startup log lines:
 
-```json
-{
-  "OperatorAddress": "ault1abc123...",
-  "EVMAddress": "0xABC123...",
-  "VRFPubKeyHex": "deadbeef...",
-  "VRFRegistered": false,
-  "LicenseCount": 0,
-  "Licenses": [],
-  "Status": "awaiting_delegation",
-  "NextStep": "Delegate a license to this operator address"
-}
+```text
+Delegate licenses to: ault1abc123...
+VRF public key: deadbeef...
 ```
 
-**Copy the `OperatorAddress`** for the next step.
+Copy the operator address for the next step.
 
 ### Step 4: Delegate Licenses
 
@@ -104,10 +96,10 @@ Monitor with:
 fly logs
 ```
 
-Or check status:
+Or check health:
 
 ```bash
-curl https://<your-app>.fly.dev/v1/status
+curl https://<your-app>.fly.dev/health
 ```
 
 ## How It Works
@@ -153,7 +145,7 @@ Or modify `fly.toml` before deployment.
      --node https://test-rpc.cloud.aultblockchain.xyz \
      --chain-id ault_10904-1 -y
    ```
-4. **Monitor operator activity** via `/v1/status` endpoint
+4. **Monitor process activity** via logs and `/health`
 
 ## Fly.io Configuration
 
@@ -163,7 +155,7 @@ The default `fly.toml` uses:
 | ------------ | ------------------ | --------------------------- |
 | Machine      | shared-cpu-2x, 1GB | Default in fly.toml         |
 | Region       | nrt (Tokyo)        | Low latency to chain        |
-| Volume       | 4GB                | Key + SQLite persistence    |
+| Volume       | 4GB                | Key persistence             |
 | Health check | GET /health        | Monitors chain connectivity |
 | Auto-stop    | Disabled           | Mining runs 24/7            |
 
@@ -212,13 +204,9 @@ fly deploy --verbose
 
 ## API Endpoints
 
-| Endpoint                       | Description                       |
-| ------------------------------ | --------------------------------- |
-| `GET /health`                  | Health check (chain connectivity) |
-| `GET /v1/operator`             | Operator address and status       |
-| `GET /v1/status`               | Miner status and stats            |
-| `GET /v1/submissions`          | List submissions                  |
-| `GET /v1/rewards?license_id=X` | Query rewards for a license       |
+| Endpoint      | Description                       |
+| ------------- | --------------------------------- |
+| `GET /health` | Health check (chain connectivity) |
 
 ## Cost Estimate
 
@@ -340,7 +328,6 @@ Update your `fly.toml`:
 ```toml
 [env]
   MINER_AUTO_MODE = "false"      # Disable auto mode
-  MINER_DISABLE_DB = "true"      # Stateless replicas
   MINER_BATCH_SIZE = "1000"
 
 # Remove the [mounts] section - no volume needed with secrets
@@ -433,7 +420,6 @@ fly secrets set \
 ```toml
 [env]
   MINER_AUTO_MODE = "false"
-  MINER_DISABLE_DB = "true"
 
 # Remove or comment out the mounts section
 # [mounts]

@@ -13,6 +13,7 @@ const (
 	EnvChainGRPC   = "CHAIN_GRPC"
 	EnvChainRPC    = "CHAIN_RPC"
 	EnvChainID     = "CHAIN_ID"
+	EnvAPIPort     = "MINER_API_PORT"
 	EnvBatchSize   = "MINER_BATCH_SIZE"
 	EnvDataDir     = "MINER_DATA_DIR"
 )
@@ -22,6 +23,7 @@ const (
 	DefaultGRPCEndpoint = "localhost:9090"
 	DefaultRPCEndpoint  = "tcp://localhost:26657"
 	DefaultChainID      = "ault_20904-1"
+	DefaultAPIPort      = "8080"
 	DefaultBatchSize    = 1000   // Max submissions per batch (<=0 = fallback 1000)
 	DefaultDataDir      = "data" // Data directory for keys
 )
@@ -31,6 +33,7 @@ type Config struct {
 	GRPCEndpoint string
 	RPCEndpoint  string
 	ChainID      string
+	APIPort      string
 	OperatorKey  string
 	VRFKey       string
 	BatchSize    int    // Max submissions per batch (<=0 = fallback 1000)
@@ -60,6 +63,7 @@ func Load() {
 			GRPCEndpoint: getEnvOrDefault(EnvChainGRPC, DefaultGRPCEndpoint),
 			RPCEndpoint:  getEnvOrDefault(EnvChainRPC, DefaultRPCEndpoint),
 			ChainID:      getEnvOrDefault(EnvChainID, DefaultChainID),
+			APIPort:      getEnvOrDefault(EnvAPIPort, DefaultAPIPort),
 			OperatorKey:  operatorKey,
 			VRFKey:       vrfKey,
 			BatchSize:    batchSize,

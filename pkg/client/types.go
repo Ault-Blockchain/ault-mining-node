@@ -28,8 +28,8 @@ type ChainClient struct {
 	authClient      authtypes.QueryClient
 	txClient        txtypes.ServiceClient
 	feemarketClient feemarkettypes.QueryClient
-	grpcEndpoint    string
-	rpcEndpoint     string
+	grpcEndpoints   []grpcEndpointConfig
+	rpcEndpoints    []string
 	chainID         string
 	gasPrices       string
 
@@ -44,6 +44,7 @@ type ChainClient struct {
 
 	// Sequence/number management (serialize signing and keep a local next sequence)
 	mu          sync.Mutex
+	endpointMu  sync.RWMutex
 	accNum      uint64
 	nextSeq     uint64
 	seqInit     bool

@@ -166,18 +166,12 @@ func (m *MinerManager) Start(ctx context.Context) error {
 	}
 }
 
-// loadOrInitSession initializes a new in-memory mining session
-func (m *MinerManager) loadOrInitSession(_ context.Context, currentEpoch uint64) {
-	m.stats.StartEpoch = currentEpoch
-	atomic.StoreUint64(&m.stats.LastProcessedEpoch, 0)
-	log.Printf("Mining session started at epoch %d", currentEpoch)
-}
-
 // processEpoch processes a new epoch for all licenses
 func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.QueryEpochResponse) {
-	// Load or initialize start epoch from DB
 	if m.stats.StartEpoch == 0 {
-		m.loadOrInitSession(ctx, epochInfo.Epoch)
+		m.stats.StartEpoch = epochInfo.Epoch
+		atomic.StoreUint64(&m.stats.LastProcessedEpoch, 0)
+		log.Printf("Mining session started at epoch %d", epochInfo.Epoch)
 	}
 
 	// Query eligible licenses (delegated-licenses returns all minable licenses for this operator)
