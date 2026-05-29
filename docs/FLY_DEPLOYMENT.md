@@ -42,7 +42,7 @@ fly launch --no-deploy
 fly deploy
 ```
 
-A 4GB persistent volume is automatically created on first deploy to store keys and the SQLite database.
+A persistent volume is automatically created on first deploy to store auto-generated keys.
 
 The miner will:
 
@@ -163,7 +163,7 @@ The default `fly.toml` uses:
 | ------------ | ------------------ | --------------------------- |
 | Machine      | shared-cpu-2x, 1GB | Default in fly.toml         |
 | Region       | nrt (Tokyo)        | Low latency to chain        |
-| Volume       | 4GB                | Key + SQLite persistence    |
+| Volume       | 4GB                | Key persistence             |
 | Health check | GET /health        | Monitors chain connectivity |
 | Auto-stop    | Disabled           | Mining runs 24/7            |
 
@@ -340,7 +340,6 @@ Update your `fly.toml`:
 ```toml
 [env]
   MINER_AUTO_MODE = "false"      # Disable auto mode
-  MINER_DISABLE_DB = "true"      # Stateless replicas
   MINER_BATCH_SIZE = "1000"
 
 # Remove the [mounts] section - no volume needed with secrets
@@ -433,7 +432,6 @@ fly secrets set \
 ```toml
 [env]
   MINER_AUTO_MODE = "false"
-  MINER_DISABLE_DB = "true"
 
 # Remove or comment out the mounts section
 # [mounts]

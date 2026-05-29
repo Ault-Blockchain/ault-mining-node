@@ -15,7 +15,6 @@ const (
 	EnvChainID     = "CHAIN_ID"
 	EnvAPIPort     = "MINER_API_PORT"
 	EnvBatchSize   = "MINER_BATCH_SIZE"
-	EnvDisableDB   = "MINER_DISABLE_DB"
 	EnvDataDir     = "MINER_DATA_DIR"
 )
 
@@ -38,7 +37,6 @@ type Config struct {
 	VRFKey       string
 	APIPort      string
 	BatchSize    int    // Max submissions per batch (<=0 = fallback 1000)
-	DisableDB    bool   // Disable SQLite storage
 	DataDir      string // Data directory for keys and DB
 	AutoMode     bool   // True if no operator/VRF keys set (auto-generate on fly.io)
 }
@@ -58,11 +56,6 @@ func Load() {
 			}
 		}
 
-		disableDB := false
-		if v := os.Getenv(EnvDisableDB); v == "true" || v == "1" {
-			disableDB = true
-		}
-
 		operatorKey := os.Getenv(EnvOperatorKey)
 		vrfKey := os.Getenv(EnvVRFKey)
 
@@ -74,7 +67,6 @@ func Load() {
 			VRFKey:       vrfKey,
 			APIPort:      getEnvOrDefault(EnvAPIPort, DefaultAPIPort),
 			BatchSize:    batchSize,
-			DisableDB:    disableDB,
 			DataDir:      getEnvOrDefault(EnvDataDir, DefaultDataDir),
 			AutoMode:     operatorKey == "" && vrfKey == "",
 		}

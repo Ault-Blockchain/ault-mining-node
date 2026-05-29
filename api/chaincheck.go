@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -25,41 +26,63 @@ type ChainReady struct {
 func checkRpc(ctx context.Context) ChainReady {
 	res := ChainReady{}
 	cfg := config.Get()
-	grpcEndpoint := cfg.GRPCEndpoint
-	rpcEndpoint := cfg.RPCEndpoint
+	grpcEndpoints := splitEndpoints(cfg.GRPCEndpoint)
+	rpcEndpoints := splitEndpoints(cfg.RPCEndpoint)
 
 	// gRPC epoch check
-	gctx, gcancel := context.WithTimeout(ctx, 2*time.Second)
-	defer gcancel()
-	conn, err := grpc.DialContext(gctx, grpcEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials())) //nolint:staticcheck // DialContext is supported throughout 1.x
-	if err == nil {
-		q := minertypes.NewQueryClient(conn)
-		if e, eerr := q.Epoch(gctx, &minertypes.QueryEpochRequest{}); eerr == nil && e != nil {
-			res.GRPCOK = true
-			res.Epoch = e.Epoch
-		} else if eerr != nil {
-			res.Error = eerr.Error()
+	for _, grpcEndpoint := range grpcEndpoints {
+		gctx, gcancel := context.WithTimeout(ctx, 2*time.Second)
+		conn, err := grpc.DialContext(gctx, grpcEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials())) //nolint:staticcheck // DialContext is supported throughout 1.x
+		if err == nil {
+			q := minertypes.NewQueryClient(conn)
+			if e, eerr := q.Epoch(gctx, &minertypes.QueryEpochRequest{}); eerr == nil && e != nil {
+				res.GRPCOK = true
+				res.Epoch = e.Epoch
+			} else if eerr != nil {
+				res.Error = eerr.Error()
+			}
+			_ = conn.Close()
+		} else {
+			res.Error = err.Error()
 		}
-		_ = conn.Close()
-	} else {
-		res.Error = err.Error()
+		gcancel()
+		if res.GRPCOK {
+			break
+		}
 	}
 
 	// RPC height check
-	rctx, rcancel := context.WithTimeout(ctx, 2*time.Second)
-	defer rcancel()
-	cli, err := cmthttp.New(rpcEndpoint, "/websocket")
-	if err == nil {
-		if st, serr := cli.Status(rctx); serr == nil {
-			res.RPCOK = true
-			res.Height = st.SyncInfo.LatestBlockHeight
+	for _, rpcEndpoint := range rpcEndpoints {
+		rctx, rcancel := context.WithTimeout(ctx, 2*time.Second)
+		cli, err := cmthttp.New(rpcEndpoint, "/websocket")
+		if err == nil {
+			if st, serr := cli.Status(rctx); serr == nil {
+				res.RPCOK = true
+				res.Height = st.SyncInfo.LatestBlockHeight
+			} else {
+				res.Error = serr.Error()
+			}
 		} else {
-			res.Error = serr.Error()
+			res.Error = err.Error()
 		}
-	} else {
-		res.Error = err.Error()
+		rcancel()
+		if res.RPCOK {
+			break
+		}
 	}
 
 	res.OK = res.GRPCOK && res.RPCOK
 	return res
+}
+
+func splitEndpoints(raw string) []string {
+	parts := strings.Split(raw, ",")
+	endpoints := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			endpoints = append(endpoints, part)
+		}
+	}
+	return endpoints
 }

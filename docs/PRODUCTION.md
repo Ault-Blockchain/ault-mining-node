@@ -42,6 +42,11 @@ MINER_VRF_KEY=<generated-vrf-private-key-hex>      # Ed25519, from vrfkeygen
 CHAIN_GRPC=test-grpc.cloud.aultblockchain.xyz:9090
 CHAIN_RPC=https://test-rpc.cloud.aultblockchain.xyz
 CHAIN_ID=ault_10904-1
+
+# Multiple endpoints can be configured as comma-separated fallbacks:
+# CHAIN_GRPC=grpc-1.example:9090,grpc-2.example:9090
+# CHAIN_RPC=https://rpc-1.example,https://rpc-2.example
+
 # Network (Mainnet)
 #CHAIN_GRPC=COMING SOON
 #CHAIN_RPC=COMING SOON
@@ -51,7 +56,6 @@ CHAIN_ID=ault_10904-1
 # Optional
 MINER_API_PORT=8080
 MINER_BATCH_SIZE=1000       # max submissions per batch (<=0 = fallback 1000)
-MINER_DISABLE_DB=false      # set to "true" to disable SQLite storage
 ```
 
 ### 3. Register VRF Key

@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -229,48 +228,21 @@ func setKeyCmd() *cobra.Command {
 	}
 }
 
-// Global state for auto mode (accessible by API)
-var (
-	autoModeStatus atomic.Value // stores *AutoModeState
-)
-
-// AutoModeState tracks the current state of auto mode
-type AutoModeState struct {
-	OperatorAddress string   `json:"operator_address"`
-	EVMAddress      string   `json:"evm_address"`
-	VRFPubKeyHex    string   `json:"vrf_pub_key_hex"`
-	VRFRegistered   bool     `json:"vrf_registered"`
-	LicenseCount    int      `json:"license_count"`
-	Licenses        []uint64 `json:"licenses"`
-	Status          string   `json:"status"` // "awaiting_delegation", "registering_vrf", "mining", "manual"
-	NextStep        string   `json:"next_step"`
-	AutoMode        bool     `json:"auto_mode"`
-}
-
-// GetAutoModeState returns the current auto mode state (for API)
-func GetAutoModeState() *AutoModeState {
-	if v := autoModeStatus.Load(); v != nil {
-		return v.(*AutoModeState)
-	}
-	return nil
-}
-
 // getVRFPubKeyHex derives the VRF public key hex from the private key hex.
-// Returns empty string on any error (non-fatal for status display).
 func getVRFPubKeyHex(vrfKeyHex string) string {
 	vrfPrivBytes, err := hex.DecodeString(vrfKeyHex)
 	if err != nil {
-		log.Printf("Warning: failed to decode VRF key for status: %v", err)
+		log.Printf("Warning: failed to decode VRF key: %v", err)
 		return ""
 	}
 	vrfPrivKey, err := ecvrf.NewPrivateKey(vrfPrivBytes)
 	if err != nil {
-		log.Printf("Warning: failed to create VRF private key for status: %v", err)
+		log.Printf("Warning: failed to create VRF private key: %v", err)
 		return ""
 	}
 	vrfPubKey, err := vrfPrivKey.Public()
 	if err != nil {
-		log.Printf("Warning: failed to derive VRF public key for status: %v", err)
+		log.Printf("Warning: failed to derive VRF public key: %v", err)
 		return ""
 	}
 	return hex.EncodeToString(vrfPubKey.Bytes())
@@ -374,15 +346,8 @@ func mineCmd() *cobra.Command {
 			// Start API server FIRST (for health checks)
 			apiAddr := ":" + cfg.APIPort
 
-			// Create a minimal API server that works before manager is ready
-			apiServer := api.New(nil, nil, chainClient)
-
-			// Set auto mode state getter if in auto mode
-			if cfg.AutoMode {
-				apiServer.SetAutoModeState(func() interface{} {
-					return GetAutoModeState()
-				})
-			}
+			// Create a minimal API server that works before manager is ready.
+			apiServer := api.New()
 
 			go func() {
 				log.Printf("Starting API server on %s", apiAddr)
@@ -401,12 +366,8 @@ func mineCmd() *cobra.Command {
 
 			// AUTO MODE: Wait for delegation, register VRF, then mine
 			if cfg.AutoMode {
-				// Get VRF public key for status reporting
+				// Get VRF public key for registration checks.
 				vrfPubKeyHex := getVRFPubKeyHex(vrfKeyHex)
-				evmAddr := common.BytesToAddress([]byte(ownerAddr))
-
-				// Initialize auto mode state
-				updateAutoModeState(ownerAddr.String(), evmAddr.Hex(), vrfPubKeyHex, false, 0, nil)
 
 				log.Println("Waiting for license delegation...")
 				log.Printf("Delegate licenses to: %s", ownerAddr.String())
@@ -429,7 +390,6 @@ func mineCmd() *cobra.Command {
 					}
 
 					if len(licenses) == 0 {
-						updateAutoModeState(ownerAddr.String(), evmAddr.Hex(), vrfPubKeyHex, false, 0, nil)
 						time.Sleep(30 * time.Second)
 						continue
 					}
@@ -455,7 +415,6 @@ func mineCmd() *cobra.Command {
 							} else {
 								// Key mismatch - rotate to local key
 								log.Printf("On-chain VRF key differs from local key (nonce %d), rotating...", keyInfo.Nonce)
-								updateAutoModeState(ownerAddr.String(), evmAddr.Hex(), vrfPubKeyHex, false, len(licenses), licenses)
 								if err := chainClient.SetOwnerVRFKey(ctx, vrfPubBytes, keyInfo.Nonce, true); err != nil {
 									log.Printf("VRF key rotation failed (will retry): %v", err)
 									time.Sleep(30 * time.Second)
@@ -466,7 +425,6 @@ func mineCmd() *cobra.Command {
 							}
 						} else {
 							// No key on chain - register new
-							updateAutoModeState(ownerAddr.String(), evmAddr.Hex(), vrfPubKeyHex, false, len(licenses), licenses)
 							log.Println("Registering VRF key on-chain...")
 							if err := chainClient.SetOwnerVRFKey(ctx, vrfPubBytes, 0, true); err != nil {
 								log.Printf("VRF registration failed (will retry): %v", err)
@@ -487,14 +445,6 @@ func mineCmd() *cobra.Command {
 						time.Sleep(30 * time.Second)
 						continue
 					}
-
-					// Update API server with manager
-					apiServer.SetManager(manager.GetStore(), func() interface{} {
-						return manager.GetStats()
-					})
-
-					// Update status to mining only after manager is successfully created
-					updateAutoModeState(ownerAddr.String(), evmAddr.Hex(), vrfPubKeyHex, true, len(licenses), licenses)
 
 					if continuous {
 						log.Printf("Starting continuous mining with %d license(s)...", len(licenses))
@@ -528,11 +478,6 @@ func mineCmd() *cobra.Command {
 			}
 			log.Printf("VRF key verified (nonce: %d)", keyInfo.Nonce)
 
-			// Update API server with manager
-			apiServer.SetManager(manager.GetStore(), func() interface{} {
-				return manager.GetStats()
-			})
-
 			if continuous {
 				log.Printf("Starting continuous mining with %d license(s)...", len(manager.GetLicenses()))
 				return manager.Start(ctx)
@@ -552,31 +497,6 @@ func mineCmd() *cobra.Command {
 	cmd.Flags().Bool("yes", false, "skip confirmation prompts")
 
 	return cmd
-}
-
-func updateAutoModeState(operatorAddr, evmAddr, vrfPubKeyHex string, vrfRegistered bool, licenseCount int, licenses []uint64) {
-	status := "awaiting_delegation"
-	nextStep := "Delegate a license to this operator address"
-
-	if licenseCount > 0 && !vrfRegistered {
-		status = "registering_vrf"
-		nextStep = "VRF registration in progress (automatic)"
-	} else if licenseCount > 0 && vrfRegistered {
-		status = "mining"
-		nextStep = "Mining active"
-	}
-
-	autoModeStatus.Store(&AutoModeState{
-		OperatorAddress: operatorAddr,
-		EVMAddress:      evmAddr,
-		VRFPubKeyHex:    vrfPubKeyHex,
-		VRFRegistered:   vrfRegistered,
-		LicenseCount:    licenseCount,
-		Licenses:        licenses,
-		Status:          status,
-		NextStep:        nextStep,
-		AutoMode:        true,
-	})
 }
 
 // LoadVRFKey loads VRF key from MINER_VRF_KEY environment variable
