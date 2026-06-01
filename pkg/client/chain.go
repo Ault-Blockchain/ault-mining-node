@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -619,7 +620,40 @@ func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName
 	}
 
 	if strings.Contains(raw, "://") {
-		return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: use host[:port] without scheme (e.g. test-grpc.cloud.aultblockchain.xyz)")
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: %w", err)
+		}
+
+		switch strings.ToLower(u.Scheme) {
+		case "https", "grpcs":
+			useTLS = true
+		case "http", "grpc":
+			useTLS = false
+		default:
+			return "", false, "", fmt.Errorf("unsupported CHAIN_GRPC scheme: %s", u.Scheme)
+		}
+
+		host := u.Host
+		if host == "" {
+			host = u.Path
+		}
+		if host == "" {
+			return "", false, "", fmt.Errorf("CHAIN_GRPC is missing host")
+		}
+		if !strings.Contains(host, ":") {
+			if useTLS {
+				host = host + ":443"
+			} else {
+				host = host + ":9090"
+			}
+		}
+
+		serverName = host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			serverName = h
+		}
+		return host, useTLS, serverName, nil
 	}
 
 	endpoint = raw
@@ -629,6 +663,10 @@ func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName
 	serverName = endpoint
 	if h, _, err := net.SplitHostPort(endpoint); err == nil {
 		serverName = h
+	}
+	// Infer TLS for port 443 when no scheme is provided
+	if strings.HasSuffix(endpoint, ":443") {
+		return endpoint, true, serverName, nil
 	}
 	return endpoint, false, serverName, nil
 }
