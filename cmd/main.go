@@ -29,14 +29,20 @@ import (
 	appcfg "github.com/Ault-Blockchain/ault/app/config"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "aultmined",
-	Short: "Ault mining client",
-	Long:  `A mining client for the Ault x/miner module that performs VRF-based mining with micro proof-of-work.`,
-}
+var (
+	configLoadErr error
+
+	rootCmd = &cobra.Command{
+		Use:   "aultmined",
+		Short: "Ault mining client",
+		Long:  `A mining client for the Ault x/miner module that performs VRF-based mining with micro proof-of-work.`,
+	}
+)
 
 func init() {
-	cobra.OnInitialize(config.Load)
+	cobra.OnInitialize(func() {
+		configLoadErr = config.Load()
+	})
 
 	// Set Ault bech32 prefix from app config
 	sdkConfig := sdk.GetConfig()
@@ -50,6 +56,10 @@ func init() {
 		setKeyCmd(),
 		mineCmd(),
 	)
+}
+
+func requireConfigLoaded(cmd *cobra.Command, args []string) error {
+	return configLoadErr
 }
 
 func keygenCmd() *cobra.Command {
@@ -168,9 +178,10 @@ Example:
 
 func setKeyCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set-key",
-		Short: "Set the owner's VRF key on-chain",
-		Long:  `Set or update the VRF key for the owner. Uses MINER_VRF_KEY environment variable.`,
+		Use:     "set-key",
+		Short:   "Set the owner's VRF key on-chain",
+		Long:    `Set or update the VRF key for the owner. Uses MINER_VRF_KEY environment variable.`,
+		PreRunE: requireConfigLoaded,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Load VRF key from environment
 			_, vrfPubKey, err := LoadVRFKey()
@@ -250,9 +261,10 @@ func getVRFPubKeyHex(vrfKeyHex string) string {
 
 func mineCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "mine",
-		Short: "Start mining with auto-detected licenses",
-		Long:  `Start the mining client. Automatically detects owned licenses and mines using the owner's VRF key.`,
+		Use:     "mine",
+		Short:   "Start mining with auto-detected licenses",
+		Long:    `Start the mining client. Automatically detects owned licenses and mines using the owner's VRF key.`,
+		PreRunE: requireConfigLoaded,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			continuous, _ := cmd.Flags().GetBool("continuous")
 			cfg := config.Get()

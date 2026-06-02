@@ -7,7 +7,7 @@ app = 'ault-miner'
 primary_region = 'nrt'
 
 [build]
-image = "ghcr.io/ault-blockchain/aultmined:v0.0.1-beta.13"
+dockerfile = "Dockerfile"
 
 [env]
 CHAIN_GRPC = 'test-grpc.cloud.aultblockchain.xyz:9090'
@@ -15,6 +15,7 @@ CHAIN_ID = 'ault_10904-1'
 CHAIN_RPC = 'https://test-rpc.cloud.aultblockchain.xyz'
 MINER_API_PORT = '8080'
 MINER_DATA_DIR = '/data'
+CHAIN_GRPC_TLS = 'auto'
 # MINER_AUTO_MODE = 'false'
 
 [[mounts]]

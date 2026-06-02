@@ -5,13 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
 	cmthttp "github.com/cometbft/cometbft/rpc/client/http"
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	"github.com/Ault-Blockchain/ault-miner-node/pkg/client"
 )
 
 type ChainReady struct {
@@ -26,29 +23,14 @@ type ChainReady struct {
 func checkRpc(ctx context.Context) ChainReady {
 	res := ChainReady{}
 	cfg := config.Get()
-	grpcEndpoints := splitEndpoints(cfg.GRPCEndpoint)
 	rpcEndpoints := splitEndpoints(cfg.RPCEndpoint)
 
-	// gRPC epoch check
-	for _, grpcEndpoint := range grpcEndpoints {
-		gctx, gcancel := context.WithTimeout(ctx, 2*time.Second)
-		conn, err := grpc.DialContext(gctx, grpcEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials())) //nolint:staticcheck // DialContext is supported throughout 1.x
-		if err == nil {
-			q := minertypes.NewQueryClient(conn)
-			if e, eerr := q.Epoch(gctx, &minertypes.QueryEpochRequest{}); eerr == nil && e != nil {
-				res.GRPCOK = true
-				res.Epoch = e.Epoch
-			} else if eerr != nil {
-				res.Error = eerr.Error()
-			}
-			_ = conn.Close()
-		} else {
-			res.Error = err.Error()
-		}
-		gcancel()
-		if res.GRPCOK {
-			break
-		}
+	// gRPC epoch check (honors CHAIN_GRPC_TLS: TLS-first then plaintext fallback)
+	if epoch, err := client.CheckGRPCEpoch(ctx, 2*time.Second); err == nil {
+		res.GRPCOK = true
+		res.Epoch = epoch
+	} else {
+		res.Error = err.Error()
 	}
 
 	// RPC height check
