@@ -69,7 +69,8 @@ Required:
 
 Optional:
 
-- `CHAIN_GRPC` - default: localhost:9090
+- `CHAIN_GRPC` - default: localhost:9090 (comma-separated list supported for failover)
+- `CHAIN_GRPC_TLS` - default: auto (`auto` = try TLS then fall back to plaintext, `true` = force TLS, `false` = force plaintext)
 - `CHAIN_RPC` - default: tcp://localhost:26657
 - `CHAIN_ID` - default: ault_20904-1
 - `MINER_API_PORT` - default: 8080

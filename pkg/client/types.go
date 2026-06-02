@@ -29,6 +29,7 @@ type ChainClient struct {
 	txClient        txtypes.ServiceClient
 	feemarketClient feemarkettypes.QueryClient
 	grpcEndpoints   []grpcEndpointConfig
+	grpcTransports  []bool
 	rpcEndpoints    []string
 	chainID         string
 	gasPrices       string
@@ -45,6 +46,7 @@ type ChainClient struct {
 	// Sequence/number management (serialize signing and keep a local next sequence)
 	mu          sync.Mutex
 	endpointMu  sync.RWMutex
+	transportIx int
 	accNum      uint64
 	nextSeq     uint64
 	seqInit     bool
