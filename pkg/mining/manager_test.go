@@ -1,9 +1,13 @@
 package mining
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ProtonMail/go-ecvrf/ecvrf"
@@ -21,14 +25,75 @@ import (
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
 	"github.com/Ault-Blockchain/ault/x/miner/keeper"
+	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
 )
 
 func TestMain(m *testing.M) {
 	// Set up environment for tests
-	os.Setenv("CHAIN_ID", "cosmos_262144-1")
+	os.Setenv("CHAIN_ID", "ault_904-1")
 	config.Load()
 	os.Exit(m.Run())
 }
+
+type fakeChainClient struct {
+	currentEpoch *minertypes.QueryEpochResponse
+	currentErr   error
+	submissions  [][]minertypes.WorkSubmission
+	mu           sync.Mutex
+}
+
+func (f *fakeChainClient) GetOwnerAddress() (sdk.AccAddress, error) {
+	return sdk.AccAddress([]byte("owner_addr____________")), nil
+}
+
+func (f *fakeChainClient) GetOwnerKeyInfo(ctx context.Context, owner string) (*minertypes.QueryOwnerKeyResponse, error) {
+	return nil, nil
+}
+
+func (f *fakeChainClient) GetLicenseMinerInfo(ctx context.Context, licenseID uint64) (*minertypes.QueryLicenseMinerInfoResponse, error) {
+	return nil, nil
+}
+
+func (f *fakeChainClient) GetOwnedLicenses(ctx context.Context, owner string) ([]uint64, error) {
+	return nil, nil
+}
+
+func (f *fakeChainClient) GetDelegatedLicenses(ctx context.Context, operator string) ([]uint64, error) {
+	return []uint64{1}, nil
+}
+
+func (f *fakeChainClient) MonitorEpochs(ctx context.Context, epochChan chan<- *minertypes.QueryEpochResponse) error {
+	return nil
+}
+
+func (f *fakeChainClient) GetParams(ctx context.Context) (*minertypes.Params, error) {
+	return nil, nil
+}
+
+func (f *fakeChainClient) BatchSubmitWork(ctx context.Context, workResults []minertypes.WorkSubmission) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	copied := append([]minertypes.WorkSubmission(nil), workResults...)
+	f.submissions = append(f.submissions, copied)
+	return "txhash", nil
+}
+
+func (f *fakeChainClient) GetCurrentEpoch(ctx context.Context) (*minertypes.QueryEpochResponse, error) {
+	if f.currentErr != nil {
+		return nil, f.currentErr
+	}
+	return f.currentEpoch, nil
+}
+
+func (f *fakeChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonce uint64, autoPoP bool) error {
+	return nil
+}
+
+func (f *fakeChainClient) GetChainID() string {
+	return "ault_904-1"
+}
+
+func (f *fakeChainClient) Close() {}
 
 func TestBuildOwnerPoP(t *testing.T) {
 	owner := sdk.AccAddress([]byte("test_owner__________"))
@@ -75,6 +140,96 @@ func TestBuildOwnerPoP(t *testing.T) {
 	assert.Equal(t, expectedHash, popMsg)
 }
 
+func TestProcessEpochJumpsToCurrentEpoch(t *testing.T) {
+	priv, err := ecvrf.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pub, err := priv.Public()
+	require.NoError(t, err)
+
+	currentSeed := make([]byte, 32)
+	currentSeed[0] = 0x78
+	threshold := make([]byte, 32)
+	for i := range threshold {
+		threshold[i] = 0xff
+	}
+
+	chainClient := &fakeChainClient{
+		currentEpoch: &minertypes.QueryEpochResponse{
+			Epoch:     120,
+			Seed:      currentSeed,
+			Threshold: threshold,
+		},
+	}
+	manager := &MinerManager{
+		ownerAddr:   sdk.AccAddress([]byte("owner_addr____________")),
+		vrfPrivKey:  priv.Bytes(),
+		vrfPubKey:   pub.Bytes(),
+		licenses:    []uint64{1},
+		chainClient: chainClient,
+		stats: &MiningStats{
+			LicenseStats: map[uint64]*LicenseStats{
+				1: {LicenseID: 1},
+			},
+		},
+	}
+
+	staleSeed := make([]byte, 32)
+	staleSeed[0] = 0x64
+	manager.processEpoch(context.Background(), &minertypes.QueryEpochResponse{
+		Epoch:     100,
+		Seed:      staleSeed,
+		Threshold: threshold,
+	})
+
+	require.Len(t, chainClient.submissions, 1)
+	require.Len(t, chainClient.submissions[0], 1)
+	assert.Equal(t, uint64(120), chainClient.submissions[0][0].Epoch)
+	assert.Equal(t, uint64(120), manager.stats.StartEpoch)
+	assert.Equal(t, uint64(120), atomic.LoadUint64(&manager.stats.LastProcessedEpoch))
+}
+
+func TestProcessEpochFallsBackToQueuedEpochWhenCurrentEpochQueryFails(t *testing.T) {
+	priv, err := ecvrf.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pub, err := priv.Public()
+	require.NoError(t, err)
+
+	seed := make([]byte, 32)
+	seed[0] = 0x64
+	threshold := make([]byte, 32)
+	for i := range threshold {
+		threshold[i] = 0xff
+	}
+
+	chainClient := &fakeChainClient{
+		currentErr: errors.New("rpc unavailable"),
+	}
+	manager := &MinerManager{
+		ownerAddr:   sdk.AccAddress([]byte("owner_addr____________")),
+		vrfPrivKey:  priv.Bytes(),
+		vrfPubKey:   pub.Bytes(),
+		licenses:    []uint64{1},
+		chainClient: chainClient,
+		stats: &MiningStats{
+			LicenseStats: map[uint64]*LicenseStats{
+				1: {LicenseID: 1},
+			},
+		},
+	}
+
+	manager.processEpoch(context.Background(), &minertypes.QueryEpochResponse{
+		Epoch:     100,
+		Seed:      seed,
+		Threshold: threshold,
+	})
+
+	require.Len(t, chainClient.submissions, 1)
+	require.Len(t, chainClient.submissions[0], 1)
+	assert.Equal(t, uint64(100), chainClient.submissions[0][0].Epoch)
+	assert.Equal(t, uint64(100), manager.stats.StartEpoch)
+	assert.Equal(t, uint64(100), atomic.LoadUint64(&manager.stats.LastProcessedEpoch))
+}
+
 func TestBuildVRFMessage(t *testing.T) {
 	seed := make([]byte, 32)
 	licenseID := uint64(123)
@@ -107,7 +262,7 @@ func TestClientBindingMatchesKeeper(t *testing.T) {
 	clientMsg := BuildVRFMessage(seed, licenseID, owner)
 
 	// Keeper-computed message (needs a context with ChainID)
-	ctx := sdk.NewContext(nil, tmproto.Header{ChainID: "cosmos_262144-1"}, false, log.NewNopLogger())
+	ctx := sdk.NewContext(nil, tmproto.Header{ChainID: "ault_904-1"}, false, log.NewNopLogger())
 	keeperMsg := keeper.BuildVRFMessage(ctx, seed, licenseID, owner)
 
 	assert.Equal(t, keeperMsg, clientMsg)

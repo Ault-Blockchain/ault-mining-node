@@ -22,16 +22,18 @@ import (
 
 // ChainClient handles all chain interactions
 type ChainClient struct {
-	grpcConn        *grpc.ClientConn
-	queryClient     minertypes.QueryClient
-	licenseClient   licensetypes.QueryClient
-	authClient      authtypes.QueryClient
-	txClient        txtypes.ServiceClient
-	feemarketClient feemarkettypes.QueryClient
-	grpcEndpoints   []grpcEndpointConfig
-	rpcEndpoints    []string
-	chainID         string
-	gasPrices       string
+	grpcConn          *grpc.ClientConn
+	queryClient       minertypes.QueryClient
+	licenseClient     licensetypes.QueryClient
+	authClient        authtypes.QueryClient
+	txClient          txtypes.ServiceClient
+	feemarketClient   feemarkettypes.QueryClient
+	grpcEndpoints     []grpcEndpointConfig
+	rpcEndpoints      []string
+	epochQueryConns   map[grpcEndpointConfig]*grpc.ClientConn
+	epochQueryClients map[grpcEndpointConfig]minertypes.QueryClient
+	chainID           string
+	gasPrices         string
 
 	// Operator key for signing
 	privKey cryptotypes.PrivKey
@@ -39,12 +41,14 @@ type ChainClient struct {
 
 	// signing/encoding
 	interfaceRegistry codectypes.InterfaceRegistry
-	protoCodec        codec.Codec
+	protoCodec        *codec.ProtoCodec
 	txConfig          client.TxConfig
 
 	// Sequence/number management (serialize signing and keep a local next sequence)
 	mu          sync.Mutex
 	endpointMu  sync.RWMutex
+	epochMu     sync.Mutex
+	closed      bool
 	accNum      uint64
 	nextSeq     uint64
 	seqInit     bool

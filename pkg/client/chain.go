@@ -114,6 +114,8 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 		feemarketClient:   feemarkettypes.NewQueryClient(conn),
 		grpcEndpoints:     grpcEndpoints,
 		rpcEndpoints:      rpcEndpoints,
+		epochQueryConns:   make(map[grpcEndpointConfig]*grpc.ClientConn),
+		epochQueryClients: make(map[grpcEndpointConfig]minertypes.QueryClient),
 		chainID:           cfg.ChainID,
 		gasPrices:         gasPrices,
 		privKey:           privKey,
@@ -140,9 +142,21 @@ func (c *ChainClient) GetOwnerAddress() (sdk.AccAddress, error) {
 // Close closes the gRPC connection
 func (c *ChainClient) Close() {
 	c.endpointMu.Lock()
-	defer c.endpointMu.Unlock()
 	if c.grpcConn != nil {
-		c.grpcConn.Close()
+		_ = c.grpcConn.Close()
+	}
+	// Release endpointMu before acquiring epochMu to keep lock ordering simple.
+	c.endpointMu.Unlock()
+
+	c.epochMu.Lock()
+	defer c.epochMu.Unlock()
+	c.closed = true
+	for endpoint, conn := range c.epochQueryConns {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		delete(c.epochQueryConns, endpoint)
+		delete(c.epochQueryClients, endpoint)
 	}
 }
 
@@ -502,16 +516,10 @@ func (c *ChainClient) switchToNextGRPCEndpoint() bool {
 		return false
 	}
 
-	protoCodec, ok := c.protoCodec.(*codec.ProtoCodec)
-	if !ok {
-		log.Printf("cannot switch gRPC endpoint: unexpected codec type %T", c.protoCodec)
-		return false
-	}
-
 	var lastErr error
 	for offset := 1; offset < len(c.grpcEndpoints); offset++ {
 		next := c.grpcEndpoints[offset]
-		conn, err := newGRPCConn(next, protoCodec)
+		conn, err := newGRPCConn(next, c.protoCodec)
 		if err != nil {
 			lastErr = err
 			continue

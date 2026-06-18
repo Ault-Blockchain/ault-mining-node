@@ -168,6 +168,16 @@ func (m *MinerManager) Start(ctx context.Context) error {
 
 // processEpoch processes a new epoch for all licenses
 func (m *MinerManager) processEpoch(ctx context.Context, epochInfo *minertypes.QueryEpochResponse) {
+	// Re-check freshness before spending CPU so a lagging RPC event cannot keep
+	// the miner working on an epoch the chain has already passed.
+	currentEpoch, err := m.chainClient.GetCurrentEpoch(ctx)
+	if err != nil {
+		log.Printf("Failed to query current epoch before processing epoch %d; processing queued epoch: %v", epochInfo.Epoch, err)
+	} else if currentEpoch.Epoch > epochInfo.Epoch {
+		log.Printf("Epoch advanced from %d to %d before processing; jumping to current epoch", epochInfo.Epoch, currentEpoch.Epoch)
+		epochInfo = currentEpoch
+	}
+
 	if m.stats.StartEpoch == 0 {
 		m.stats.StartEpoch = epochInfo.Epoch
 		atomic.StoreUint64(&m.stats.LastProcessedEpoch, 0)

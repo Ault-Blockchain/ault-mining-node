@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -13,6 +14,10 @@ import (
 
 // GetCurrentEpoch queries the current epoch from chain
 func (c *ChainClient) GetCurrentEpoch(ctx context.Context) (*minertypes.QueryEpochResponse, error) {
+	if len(c.grpcEndpoints) > 1 {
+		return c.getHighestCurrentEpoch(ctx)
+	}
+
 	var lastErr error
 	for range len(c.grpcEndpoints) {
 		for range rpcMaxRetries {
@@ -31,6 +36,106 @@ func (c *ChainClient) GetCurrentEpoch(ctx context.Context) (*minertypes.QueryEpo
 		}
 	}
 	return nil, fmt.Errorf("failed to query epoch: %w", lastErr)
+}
+
+func (c *ChainClient) getHighestCurrentEpoch(ctx context.Context) (*minertypes.QueryEpochResponse, error) {
+	c.endpointMu.RLock()
+	endpoints := append([]grpcEndpointConfig(nil), c.grpcEndpoints...)
+	primaryQueryClient := c.queryClient
+	c.endpointMu.RUnlock()
+
+	type epochResult struct {
+		resp *minertypes.QueryEpochResponse
+		err  error
+	}
+
+	results := make(chan epochResult, len(endpoints))
+	var wg sync.WaitGroup
+
+	for i, endpoint := range endpoints {
+		wg.Add(1)
+		go func(i int, endpoint grpcEndpointConfig) {
+			defer wg.Done()
+
+			queryClient := primaryQueryClient
+			if i > 0 {
+				var err error
+				queryClient, err = c.getEpochQueryClient(endpoint)
+				if err != nil {
+					results <- epochResult{err: err}
+					return
+				}
+			}
+
+			resp, err := queryEpochWithRetries(ctx, queryClient)
+			results <- epochResult{resp: resp, err: err}
+		}(i, endpoint)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var highest *minertypes.QueryEpochResponse
+	var queryErrs []error
+
+	for result := range results {
+		if result.err != nil {
+			queryErrs = append(queryErrs, result.err)
+			continue
+		}
+		if highest == nil || result.resp.Epoch > highest.Epoch {
+			highest = result.resp
+		}
+	}
+
+	if highest != nil {
+		return highest, nil
+	}
+	if err := errors.Join(queryErrs...); err != nil {
+		return nil, fmt.Errorf("failed to query epoch: %w", err)
+	}
+	return nil, fmt.Errorf("failed to query epoch")
+}
+
+func (c *ChainClient) getEpochQueryClient(endpoint grpcEndpointConfig) (minertypes.QueryClient, error) {
+	c.epochMu.Lock()
+	defer c.epochMu.Unlock()
+
+	if c.closed {
+		return nil, fmt.Errorf("chain client is closed")
+	}
+
+	if queryClient := c.epochQueryClients[endpoint]; queryClient != nil {
+		return queryClient, nil
+	}
+
+	conn, err := newGRPCConn(endpoint, c.protoCodec)
+	if err != nil {
+		return nil, err
+	}
+
+	queryClient := minertypes.NewQueryClient(conn)
+	c.epochQueryConns[endpoint] = conn
+	c.epochQueryClients[endpoint] = queryClient
+	return queryClient, nil
+}
+
+func queryEpochWithRetries(ctx context.Context, queryClient minertypes.QueryClient) (*minertypes.QueryEpochResponse, error) {
+	var lastErr error
+	for range rpcMaxRetries {
+		resp, err := queryClient.Epoch(ctx, &minertypes.QueryEpochRequest{})
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("failed to query epoch: %w", ctx.Err())
+		}
+		time.Sleep(rpcRetryDelay)
+	}
+	return nil, lastErr
 }
 
 // GetLicenseMinerInfo queries mining info for a license
