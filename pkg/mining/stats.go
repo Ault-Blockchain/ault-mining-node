@@ -23,6 +23,34 @@ var (
 		prometheus.CounterOpts{Name: "miner_submissions_total", Help: "Total submitted works per license"},
 		[]string{"license_id"},
 	)
+	metricSubmitFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "miner_submit_failures_total",
+			Help: "Failed BatchSubmitWork attempts, classified by reason.",
+		},
+		[]string{"reason", "license_id"},
+	)
+	metricVRFProofFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "miner_vrf_proof_failures_total",
+			Help: "VRF proof generation failures per license.",
+		},
+		[]string{"license_id"},
+	)
+	metricPoWFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "miner_pow_failures_total",
+			Help: "PoW solving failures per license (max attempts exceeded).",
+		},
+		[]string{"license_id"},
+	)
+	metricOperatorInfo = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "miner_operator_info",
+			Help: "Info gauge (value=1) exposing this miner's operator address as a label. Use for label joins.",
+		},
+		[]string{"operator"},
+	)
 )
 
 var (
