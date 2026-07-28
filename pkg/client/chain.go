@@ -40,6 +40,8 @@ import (
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
 	appcfg "github.com/Ault-Blockchain/ault/v2/app/config"
+	commontypes "github.com/Ault-Blockchain/ault/v2/common/types"
+	accountxtypes "github.com/Ault-Blockchain/ault/v2/x/accountx/types"
 	licensetypes "github.com/Ault-Blockchain/ault/v2/x/license/types"
 	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
@@ -110,6 +112,7 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 		queryClient:       minertypes.NewQueryClient(conn),
 		licenseClient:     licensetypes.NewQueryClient(conn),
 		authClient:        authtypes.NewQueryClient(conn),
+		accountxClient:    accountxtypes.NewQueryClient(conn),
 		txClient:          txtypes.NewServiceClient(conn),
 		feemarketClient:   feemarkettypes.NewQueryClient(conn),
 		grpcEndpoints:     grpcEndpoints,
@@ -376,9 +379,10 @@ func (c *ChainClient) computeFees(gas uint64) (sdk.Coins, sdkmath.LegacyDec, err
 	return fees, floor, nil
 }
 
-// isFreeGasEligible checks if the current epoch is eligible for free gas
-// gasLimit is total gas, submissionCount is number of submissions in batch
-func (c *ChainClient) isFreeGasEligible(ctx context.Context, gasLimit uint64, submissionCount int) bool {
+// isFreeGasEligible checks if the current epoch is eligible for free gas and
+// that gasLimit fits within the per-msg-type fee-free window
+// [minGas, minGas * FeeFreeMaxGasMultiplier / 100].
+func (c *ChainClient) isFreeGasEligible(ctx context.Context, msg sdk.Msg, gasLimit uint64, unitCount uint64) bool {
 	params, err := c.GetParams(ctx)
 	if err != nil {
 		return false
@@ -388,22 +392,63 @@ func (c *ChainClient) isFreeGasEligible(ctx context.Context, gasLimit uint64, su
 	if err != nil {
 		return false
 	}
-
-	// Check if current epoch is before free mining cutoff
 	if epochResp.Epoch >= params.FreeMiningUntilEpoch {
 		return false
 	}
 
-	// Check if gas limit is within free gas limit (FreeMiningMaxGasLimit is per submission)
-	maxAllowedGas := params.FreeMiningMaxGasLimit * uint64(submissionCount)
-	if submissionCount == 0 {
-		maxAllowedGas = params.FreeMiningMaxGasLimit
-	}
-	if gasLimit > maxAllowedGas {
+	minGas := c.feeFreeMinGasOrDefault(ctx, msg, unitCount)
+	maxAllowedGas := minGas * commontypes.FeeFreeMaxGasMultiplier / 100
+	if gasLimit < minGas || gasLimit > maxAllowedGas {
 		return false
 	}
-
 	return true
+}
+
+// Per-msg-type fallback constants mirroring the ault miner module's Min*
+// values. Used only when the chain's accountx Query/FeeFreeGasLimits RPC
+// fails; keep them in sync with the chain — the fee-free ante check requires
+// gas ∈ [minGas, minGas * FeeFreeMaxGasMultiplier / 100], so a wrong value
+// here means the tx is rejected before entering the mempool.
+const (
+	fallbackMinGasBaseSubmitWork      = uint64(72_000)
+	fallbackMinGasPerSubmitWork       = uint64(77_000)
+	fallbackMinGasBaseDelegateMining  = uint64(82_000)
+	fallbackMinGasPerDelegateMining   = uint64(10_000)
+	fallbackMinGasLimitSetOwnerVrfKey = uint64(90_000)
+)
+
+// feeFreeFallback returns the per-msg-type fallback fee-free gas config,
+// keyed by msg type URL. Structure mirrors accountx keeper's registrations.
+var feeFreeFallback = map[string]feeFreeGasLimit{
+	sdk.MsgTypeURL(&minertypes.MsgSubmitWork{}):             {base: fallbackMinGasBaseSubmitWork + fallbackMinGasPerSubmitWork, perUnit: 0},
+	sdk.MsgTypeURL(&minertypes.MsgBatchSubmitWork{}):        {base: fallbackMinGasBaseSubmitWork, perUnit: fallbackMinGasPerSubmitWork},
+	sdk.MsgTypeURL(&minertypes.MsgDelegateMining{}):         {base: fallbackMinGasBaseDelegateMining, perUnit: fallbackMinGasPerDelegateMining},
+	sdk.MsgTypeURL(&minertypes.MsgRedelegateMining{}):       {base: fallbackMinGasBaseDelegateMining, perUnit: fallbackMinGasPerDelegateMining},
+	sdk.MsgTypeURL(&minertypes.MsgCancelMiningDelegation{}): {base: fallbackMinGasBaseDelegateMining, perUnit: fallbackMinGasPerDelegateMining},
+	sdk.MsgTypeURL(&minertypes.MsgSetOwnerVrfKey{}):         {base: fallbackMinGasLimitSetOwnerVrfKey, perUnit: 0},
+}
+
+// feeFreeMinGasOrDefault returns the per-msg-type min gas for a fee-free tx,
+// computed as base + perUnit * unitCount. Falls back to the per-msg-type
+// values in feeFreeFallback if the chain query fails or the msg type is not
+// registered on chain.
+func (c *ChainClient) feeFreeMinGasOrDefault(ctx context.Context, msg sdk.Msg, unitCount uint64) uint64 {
+	msgURL := sdk.MsgTypeURL(msg)
+	if limits, err := c.getFeeFreeGasLimits(ctx); err == nil {
+		if lim, ok := limits[msgURL]; ok {
+			if gas := lim.base + lim.perUnit*unitCount; gas > 0 {
+				return gas
+			}
+		}
+	}
+	if lim, ok := feeFreeFallback[msgURL]; ok {
+		if gas := lim.base + lim.perUnit*unitCount; gas > 0 {
+			return gas
+		}
+	}
+	// Last-resort fallback for an unknown msg type: enough to cover a single
+	// submit-work-sized op without tripping the max gas ceiling.
+	return fallbackMinGasBaseSubmitWork + fallbackMinGasPerSubmitWork
 }
 
 // simulateGas estimates gas via Service.Simulate
@@ -531,6 +576,7 @@ func (c *ChainClient) switchToNextGRPCEndpoint() bool {
 		c.queryClient = minertypes.NewQueryClient(conn)
 		c.licenseClient = licensetypes.NewQueryClient(conn)
 		c.authClient = authtypes.NewQueryClient(conn)
+		c.accountxClient = accountxtypes.NewQueryClient(conn)
 		c.txClient = txtypes.NewServiceClient(conn)
 		c.feemarketClient = feemarkettypes.NewQueryClient(conn)
 		c.grpcEndpoints = append(c.grpcEndpoints[offset:], c.grpcEndpoints[:offset]...)

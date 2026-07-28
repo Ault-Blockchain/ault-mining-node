@@ -17,6 +17,17 @@ import (
 	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
+// unitCountForMsg returns the per-unit count used to compute the fee-free min
+// gas for a msg (base + perUnit * n). Non-batch msgs use 1.
+func unitCountForMsg(msg sdk.Msg) uint64 {
+	switch m := msg.(type) {
+	case *minertypes.MsgBatchSubmitWork:
+		return uint64(len(m.Submissions))
+	default:
+		return 1
+	}
+}
+
 const (
 	txMaxRetries    = 3
 	txRetryDelay    = 500 * time.Millisecond
@@ -42,11 +53,7 @@ func (c *ChainClient) BatchSubmitWork(ctx context.Context, workResults []minerty
 		Submitter:   fromAddr.String(),
 	}
 
-	// Calculate gas limit for batch transaction
-	// Free gas limit is 200,000 per submission (FreeMiningMaxGasLimit)
-	gasLimit := uint64(len(submissions) * 200000)
-
-	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, gasLimit, len(submissions))
+	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg)
 	if err != nil {
 		return "", err
 	}
@@ -102,7 +109,7 @@ func (c *ChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonc
 		Owner:           fromAddr.String(),
 	}
 
-	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg, 200000, 1)
+	txHash, err := c.broadcastTransaction(ctx, fromAddr, msg)
 	if err != nil {
 		return err
 	}
@@ -110,9 +117,10 @@ func (c *ChainClient) SetOwnerVRFKey(ctx context.Context, vrfPubkey []byte, nonc
 	return c.waitForTxConfirmation(ctx, txHash)
 }
 
-// buildSignAndBroadcast builds, signs and broadcasts a tx with one msg
-// submissionCount is used for free gas calculation (0 for non-batch txs defaults to 1)
-func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg, gasLimit uint64, submissionCount int) (string, error) {
+// buildSignAndBroadcast builds, signs and broadcasts a tx with one msg.
+// Gas is derived from the chain's fee-free min gas for the msg (base +
+// perUnit * unitCount) with a fallback for msgs not registered in accountx.
+func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg) (string, error) {
 	// Serialize signing/broadcasting to avoid concurrent sequence races
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -122,10 +130,8 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 		return "", err
 	}
 
-	// Default submission count to 1 for non-batch transactions
-	if submissionCount <= 0 {
-		submissionCount = 1
-	}
+	unitCount := unitCountForMsg(msg)
+	gasLimit := c.feeFreeMinGasOrDefault(ctx, msg, unitCount)
 
 	// Retry loop with sequence refresh/backoff on mismatch
 	var (
@@ -141,7 +147,7 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 			var fees sdk.Coins
 			var floor sdkmath.LegacyDec
 			var simGas uint64
-			useFreeGas := c.isFreeGasEligible(ctx, gasLimit, submissionCount)
+			useFreeGas := c.isFreeGasEligible(ctx, msg, gasLimit, unitCount)
 
 			if useFreeGas {
 				// Use original gas limit to stay within free gas limit (no 1.2x adjustment)
@@ -262,9 +268,8 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 	return txHash, fmt.Errorf("broadcast failed without explicit error")
 }
 
-// broadcastTransaction broadcasts a transaction using operator funds
-// Note: Free gas is automatically granted by the chain for eligible miner operations
-// submissionCount is the number of submissions in a batch (use 0 or 1 for non-batch txs)
-func (c *ChainClient) broadcastTransaction(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg, gasLimit uint64, submissionCount int) (string, error) {
-	return c.buildSignAndBroadcast(ctx, fromAddr, msg, gasLimit, submissionCount)
+// broadcastTransaction broadcasts a transaction using operator funds. Gas is
+// derived from the chain's fee-free min gas settings for the msg type.
+func (c *ChainClient) broadcastTransaction(ctx context.Context, fromAddr sdk.AccAddress, msg sdk.Msg) (string, error) {
+	return c.buildSignAndBroadcast(ctx, fromAddr, msg)
 }

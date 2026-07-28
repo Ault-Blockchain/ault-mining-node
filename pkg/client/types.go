@@ -16,6 +16,7 @@ import (
 
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 
+	accountxtypes "github.com/Ault-Blockchain/ault/v2/x/accountx/types"
 	licensetypes "github.com/Ault-Blockchain/ault/v2/x/license/types"
 	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
@@ -26,6 +27,7 @@ type ChainClient struct {
 	queryClient       minertypes.QueryClient
 	licenseClient     licensetypes.QueryClient
 	authClient        authtypes.QueryClient
+	accountxClient    accountxtypes.QueryClient
 	txClient          txtypes.ServiceClient
 	feemarketClient   feemarkettypes.QueryClient
 	grpcEndpoints     []grpcEndpointConfig
@@ -53,4 +55,18 @@ type ChainClient struct {
 	nextSeq     uint64
 	seqInit     bool
 	lastSeqSync time.Time
+
+	// Fee-free gas limits cache (per-msg-type-URL). Values come from the
+	// chain's accountx Query/FeeFreeGasLimits RPC and change only on chain
+	// upgrades, so a short TTL is enough to pick them up automatically.
+	gasLimitsMu      sync.Mutex
+	gasLimitsCache   map[string]feeFreeGasLimit
+	gasLimitsCacheAt time.Time
+}
+
+// feeFreeGasLimit mirrors accountxtypes.FeeFreeGasLimit but without the
+// dependency on the proto pointer; gas = base + perUnit * n.
+type feeFreeGasLimit struct {
+	base    uint64
+	perUnit uint64
 }
