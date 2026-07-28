@@ -5,7 +5,7 @@ go 1.25.8
 require (
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/math v1.5.3
-	github.com/Ault-Blockchain/ault/v2 v2.0.0-00010101000000-000000000000
+	github.com/Ault-Blockchain/ault/v2 v2.0.0
 	github.com/ProtonMail/go-ecvrf v0.0.1
 	github.com/cometbft/cometbft v0.38.21
 	github.com/cosmos/cosmos-sdk v0.53.6
@@ -216,9 +216,9 @@ replace (
 	cosmossdk.io/log => github.com/Ault-Blockchain/cosmos-sdk/log v1.6.1-ault.2
 	cosmossdk.io/store => github.com/Ault-Blockchain/cosmos-sdk/store v1.1.2-ault.3
 	github.com/Ault-Blockchain/ault/v2 => github.com/Ault-Blockchain/ault/v2 v2.0.0
-	github.com/cometbft/cometbft => github.com/Ault-Blockchain/cometbft v0.38.23-ault.0
-	github.com/cosmos/cosmos-sdk => github.com/Ault-Blockchain/cosmos-sdk v0.53.6-ault.9
-	github.com/cosmos/evm => github.com/Ault-Blockchain/evm v0.6.0-ault.6.rc1
+	github.com/cometbft/cometbft => github.com/Ault-Blockchain/cometbft v0.38.23-ault.3
+	github.com/cosmos/cosmos-sdk => github.com/Ault-Blockchain/cosmos-sdk v0.53.6-ault.13
+	github.com/cosmos/evm => github.com/Ault-Blockchain/evm v0.6.0-ault.10
 	github.com/cosmos/evm/evmd => github.com/Ault-Blockchain/evm/evmd v0.0.0-20251204194359-140e68e11a05
 	github.com/ethereum/go-ethereum => github.com/cosmos/go-ethereum v1.16.2-cosmos-1
 )
