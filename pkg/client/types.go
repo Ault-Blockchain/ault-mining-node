@@ -16,8 +16,8 @@ import (
 
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 
-	licensetypes "github.com/Ault-Blockchain/ault/x/license/types"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	licensetypes "github.com/Ault-Blockchain/ault/v2/x/license/types"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
 // ChainClient handles all chain interactions
