@@ -414,7 +414,7 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 		} else if strings.Contains(err.Error(), "key too young") || strings.Contains(err.Error(), "key registered at epoch") {
 			log.Printf("⏱️  VRF key is too young - must wait a few epochs after registration before mining")
 			reason = "key_too_young"
-		} else if strings.Contains(err.Error(), "confirmation failed") {
+		} else if strings.Contains(err.Error(), "transaction not confirmed") {
 			// Transaction was submitted but not confirmed - still count as submission
 			for _, result := range workResults {
 				if stats := m.stats.LicenseStats[result.LicenseId]; stats != nil {
@@ -428,9 +428,9 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 			log.Printf("💡 Check chain connection and account balance for gas")
 			reason = "send_failed"
 		}
-		for _, r := range workResults {
-			metricSubmitFailures.WithLabelValues(reason, strconv.FormatUint(r.LicenseId, 10)).Inc()
-		}
+		// Aggregate by reason only; a per-license_id label would explode
+		// cardinality on nodes with many delegated licenses.
+		metricSubmitFailures.WithLabelValues(reason).Add(float64(len(workResults)))
 		return
 	}
 

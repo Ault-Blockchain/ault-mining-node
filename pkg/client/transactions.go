@@ -50,6 +50,13 @@ func (c *ChainClient) BatchSubmitWork(ctx context.Context, workResults []minerty
 	if err != nil {
 		return "", err
 	}
+	// BROADCAST_MODE_SYNC only reports CheckTx acceptance; execution-time
+	// failures (duplicate work, ineligibility, invalid proof, young key, ...)
+	// surface in DeliverTx. Wait for the delivered result so callers can
+	// classify real failures instead of counting them as successes.
+	if err := c.waitForTxConfirmation(ctx, txHash); err != nil {
+		return txHash, err
+	}
 	fmt.Printf("Batch work submitted successfully! Tx: %s\n", txHash)
 	return txHash, nil
 }

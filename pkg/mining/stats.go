@@ -26,9 +26,9 @@ var (
 	metricSubmitFailures = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "miner_submit_failures_total",
-			Help: "Failed BatchSubmitWork attempts, classified by reason.",
+			Help: "Failed BatchSubmitWork submissions, classified by reason.",
 		},
-		[]string{"reason", "license_id"},
+		[]string{"reason"},
 	)
 	metricVRFProofFailures = promauto.NewCounterVec(
 		prometheus.CounterOpts{
