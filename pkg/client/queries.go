@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	licensetypes "github.com/Ault-Blockchain/ault/x/license/types"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	licensetypes "github.com/Ault-Blockchain/ault/v2/x/license/types"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 )
 

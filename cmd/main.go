@@ -25,7 +25,7 @@ import (
 	"github.com/Ault-Blockchain/ault-miner-node/internal/storage"
 	"github.com/Ault-Blockchain/ault-miner-node/pkg/client"
 	"github.com/Ault-Blockchain/ault-miner-node/pkg/mining"
-	appcfg "github.com/Ault-Blockchain/ault/app/config"
+	appcfg "github.com/Ault-Blockchain/ault/v2/app/config"
 
 	"github.com/ethereum/go-ethereum/common"
 )
