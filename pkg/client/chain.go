@@ -39,9 +39,9 @@ import (
 	feemarkettypes "github.com/cosmos/evm/x/feemarket/types"
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
-	appcfg "github.com/Ault-Blockchain/ault/app/config"
-	licensetypes "github.com/Ault-Blockchain/ault/x/license/types"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	appcfg "github.com/Ault-Blockchain/ault/v2/app/config"
+	licensetypes "github.com/Ault-Blockchain/ault/v2/x/license/types"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
 const (

@@ -13,8 +13,8 @@ import (
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 
-	"github.com/Ault-Blockchain/ault/x/miner/keeper"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	"github.com/Ault-Blockchain/ault/v2/x/miner/keeper"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
 const (

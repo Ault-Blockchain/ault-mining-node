@@ -20,7 +20,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
 // NewMinerManager creates a new miner manager for the owner

@@ -11,7 +11,7 @@ import (
 	cmthttp "github.com/cometbft/cometbft/rpc/client/http"
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
 type ChainReady struct {

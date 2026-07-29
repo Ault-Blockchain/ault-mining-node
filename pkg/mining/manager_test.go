@@ -24,8 +24,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
-	"github.com/Ault-Blockchain/ault/x/miner/keeper"
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	"github.com/Ault-Blockchain/ault/v2/x/miner/keeper"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
 func TestMain(m *testing.M) {

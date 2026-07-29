@@ -5,7 +5,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	minertypes "github.com/Ault-Blockchain/ault/x/miner/types"
+	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 )
 
 // MinerManager manages mining for an owner with multiple licenses
