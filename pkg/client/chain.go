@@ -40,7 +40,6 @@ import (
 
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
 	appcfg "github.com/Ault-Blockchain/ault/v2/app/config"
-	commontypes "github.com/Ault-Blockchain/ault/v2/common/types"
 	accountxtypes "github.com/Ault-Blockchain/ault/v2/x/accountx/types"
 	licensetypes "github.com/Ault-Blockchain/ault/v2/x/license/types"
 	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
@@ -379,10 +378,9 @@ func (c *ChainClient) computeFees(gas uint64) (sdk.Coins, sdkmath.LegacyDec, err
 	return fees, floor, nil
 }
 
-// isFreeGasEligible checks if the current epoch is eligible for free gas and
-// that gasLimit fits within the per-msg-type fee-free window
-// [minGas, minGas * FeeFreeMaxGasMultiplier / 100].
-func (c *ChainClient) isFreeGasEligible(ctx context.Context, msg sdk.Msg, gasLimit uint64, unitCount uint64) bool {
+// isFreeGasEligible checks if the current epoch is eligible for free gas.
+// It queries the chain's miner module for the FreeMiningUntilEpoch parameter.
+func (c *ChainClient) isFreeGasEligible(ctx context.Context) bool {
 	params, err := c.GetParams(ctx)
 	if err != nil {
 		return false
@@ -396,11 +394,6 @@ func (c *ChainClient) isFreeGasEligible(ctx context.Context, msg sdk.Msg, gasLim
 		return false
 	}
 
-	minGas := c.feeFreeMinGasOrDefault(ctx, msg, unitCount)
-	maxAllowedGas := minGas * commontypes.FeeFreeMaxGasMultiplier / 100
-	if gasLimit < minGas || gasLimit > maxAllowedGas {
-		return false
-	}
 	return true
 }
 
@@ -448,7 +441,7 @@ func (c *ChainClient) feeFreeMinGasOrDefault(ctx context.Context, msg sdk.Msg, u
 	}
 	// Last-resort fallback for an unknown msg type: enough to cover a single
 	// submit-work-sized op without tripping the max gas ceiling.
-	return fallbackMinGasBaseSubmitWork + fallbackMinGasPerSubmitWork
+	return fallbackMinGasBaseSubmitWork + fallbackMinGasPerSubmitWork*unitCount
 }
 
 // simulateGas estimates gas via Service.Simulate

@@ -16,7 +16,7 @@ import (
 // feeFreeGasLimitsTTL is how long the cached fee-free gas limits stay fresh.
 // The values only change on chain upgrades, so a short TTL is plenty to pick
 // them up automatically without hammering the query on every tx.
-const feeFreeGasLimitsTTL = 5 * time.Minute
+const feeFreeGasLimitsTTL = 30 * time.Second
 
 // getFeeFreeGasLimits returns the chain's fee-free min gas settings keyed by
 // msg type URL. The result is cached for feeFreeGasLimitsTTL.

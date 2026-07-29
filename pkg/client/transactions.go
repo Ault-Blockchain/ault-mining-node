@@ -147,7 +147,7 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 			var fees sdk.Coins
 			var floor sdkmath.LegacyDec
 			var simGas uint64
-			useFreeGas := c.isFreeGasEligible(ctx, msg, gasLimit, unitCount)
+			useFreeGas := c.isFreeGasEligible(ctx)
 
 			if useFreeGas {
 				// Use original gas limit to stay within free gas limit (no 1.2x adjustment)
