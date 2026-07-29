@@ -312,9 +312,11 @@ func (c *ChainClient) MonitorEpochs(ctx context.Context, epochChan chan<- *miner
 		case <-ticker.C:
 			epoch, err := c.GetCurrentEpoch(ctx)
 			if err != nil {
+				metricChainReachable.Set(0)
 				fmt.Printf("Error querying epoch: %v\n", err)
 				continue
 			}
+			metricChainReachable.Set(1)
 
 			if epoch.Epoch > lastEpoch {
 				lastEpoch = epoch.Epoch
