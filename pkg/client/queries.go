@@ -7,10 +7,72 @@ import (
 	"sync"
 	"time"
 
+	accountxtypes "github.com/Ault-Blockchain/ault/v2/x/accountx/types"
 	licensetypes "github.com/Ault-Blockchain/ault/v2/x/license/types"
 	minertypes "github.com/Ault-Blockchain/ault/v2/x/miner/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 )
+
+// feeFreeGasLimitsTTL is how long the cached fee-free gas limits stay fresh.
+// The values only change on chain upgrades, so a short TTL is plenty to pick
+// them up automatically without hammering the query on every tx.
+const feeFreeGasLimitsTTL = 30 * time.Second
+
+// getFeeFreeGasLimits returns the chain's fee-free min gas settings keyed by
+// msg type URL. The result is cached for feeFreeGasLimitsTTL.
+func (c *ChainClient) getFeeFreeGasLimits(ctx context.Context) (map[string]feeFreeGasLimit, error) {
+	c.gasLimitsMu.Lock()
+	if c.gasLimitsCache != nil && time.Since(c.gasLimitsCacheAt) < feeFreeGasLimitsTTL {
+		cached := c.gasLimitsCache
+		c.gasLimitsMu.Unlock()
+		return cached, nil
+	}
+	c.gasLimitsMu.Unlock()
+
+	var (
+		resp    *accountxtypes.QueryFeeFreeGasLimitsResponse
+		lastErr error
+	)
+	for range len(c.grpcEndpoints) {
+		for range rpcMaxRetries {
+			r, err := c.accountxClient.FeeFreeGasLimits(ctx, &accountxtypes.QueryFeeFreeGasLimitsRequest{})
+			if err == nil {
+				resp = r
+				lastErr = nil
+				break
+			}
+			lastErr = err
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("failed to query fee-free gas limits: %w", err)
+			}
+			time.Sleep(rpcRetryDelay)
+		}
+		if lastErr == nil {
+			break
+		}
+		if !c.switchToNextGRPCEndpoint() {
+			break
+		}
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("failed to query fee-free gas limits: %w", lastErr)
+	}
+
+	limits := make(map[string]feeFreeGasLimit, len(resp.GasLimits))
+	for _, gl := range resp.GasLimits {
+		if gl == nil {
+			continue
+		}
+		limits[gl.MsgTypeUrl] = feeFreeGasLimit{base: gl.BaseGasLimit, perUnit: gl.PerUnitGasLimit}
+	}
+
+	c.gasLimitsMu.Lock()
+	c.gasLimitsCache = limits
+	c.gasLimitsCacheAt = time.Now()
+	c.gasLimitsMu.Unlock()
+
+	return limits, nil
+}
 
 // GetCurrentEpoch queries the current epoch from chain
 func (c *ChainClient) GetCurrentEpoch(ctx context.Context) (*minertypes.QueryEpochResponse, error) {
