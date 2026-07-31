@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 
+	fiberadaptor "github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
 	fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Server struct {
@@ -19,6 +21,9 @@ func New() *Server {
 
 func (s *Server) mountRoutes() {
 	s.app.Use(fiberrecover.New())
+
+	// Prometheus metrics endpoint
+	s.app.Get("/metrics", fiberadaptor.HTTPHandler(promhttp.Handler()))
 
 	// Health check (chain status)
 	s.app.Get("/health", func(c *fiber.Ctx) error {

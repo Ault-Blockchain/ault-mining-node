@@ -11,6 +11,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.53.6
 	github.com/cosmos/evm v0.2.0
 	github.com/ethereum/go-ethereum v1.15.11
+	github.com/gofiber/adaptor/v2 v2.2.1
 	github.com/gofiber/fiber/v2 v2.52.10
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.2

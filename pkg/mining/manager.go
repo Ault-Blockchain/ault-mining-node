@@ -151,6 +151,9 @@ func loadVRFKeyFromEnv() ([]byte, []byte, error) {
 func (m *MinerManager) Start(ctx context.Context) error {
 	log.Printf("Starting miner for owner %s with %d licenses", m.ownerAddr.String(), len(m.licenses))
 
+	// Expose operator address as info gauge for label joins in Prometheus/Grafana.
+	metricOperatorInfo.WithLabelValues(m.ownerAddr.String()).Set(1)
+
 	// Start monitoring epochs
 	epochChan := make(chan *minertypes.QueryEpochResponse, 1)
 	go m.chainClient.MonitorEpochs(ctx, epochChan)
@@ -307,6 +310,7 @@ func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uin
 	if err != nil {
 		log.Printf("License %d: VRF proof generation failed: %v", licenseID, err)
 		log.Printf("💡 This may indicate a corrupted VRF key. Try regenerating with: ./aultmined keygen")
+		metricVRFProofFailures.WithLabelValues(strconv.FormatUint(licenseID, 10)).Inc()
 		return nil
 	}
 	metricVRFDuration.Observe(time.Since(vrfStart).Seconds())
@@ -333,6 +337,7 @@ func (m *MinerManager) processLicenseForBatch(ctx context.Context, licenseID uin
 	if err != nil {
 		log.Printf("License %d: PoW failed after max attempts: %v", licenseID, err)
 		log.Printf("💡 This is unusual - PoW should usually succeed. Check CPU availability")
+		metricPoWFailures.WithLabelValues(strconv.FormatUint(licenseID, 10)).Inc()
 		return nil
 	}
 	metricPoWDuration.Observe(time.Since(powStart).Seconds())
@@ -393,17 +398,23 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 	_, err := m.chainClient.BatchSubmitWork(ctx, workResults)
 	if err != nil {
 		log.Printf("❌ Failed to submit batch work: %v", err)
+		var reason string
 		if strings.Contains(err.Error(), "duplicate") {
 			log.Printf("💡 Some licenses may have already submitted for this epoch")
+			reason = "duplicate"
 		} else if strings.Contains(err.Error(), "not eligible") {
 			log.Printf("💡 Some licenses may be quarantined or not properly configured")
+			reason = "not_eligible"
 		} else if strings.Contains(err.Error(), "invalid proof") {
 			log.Printf("💡 VRF key mismatch - ensure your key is registered on-chain")
+			reason = "invalid_proof"
 		} else if strings.Contains(err.Error(), "VRF verification failed") {
 			log.Printf("🔍 Debug: VRF verification failed for some proofs")
+			reason = "vrf_verification_failed"
 		} else if strings.Contains(err.Error(), "key too young") || strings.Contains(err.Error(), "key registered at epoch") {
 			log.Printf("⏱️  VRF key is too young - must wait a few epochs after registration before mining")
-		} else if strings.Contains(err.Error(), "confirmation failed") {
+			reason = "key_too_young"
+		} else if strings.Contains(err.Error(), "transaction not confirmed") {
 			// Transaction was submitted but not confirmed - still count as submission
 			for _, result := range workResults {
 				if stats := m.stats.LicenseStats[result.LicenseId]; stats != nil {
@@ -412,9 +423,14 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 			}
 			atomic.AddUint64(&m.stats.TotalSubmissions, uint64(len(workResults)))
 			log.Printf("💡 Transaction submitted but confirmation timed out - check tx status manually")
+			reason = "confirmation_timeout"
 		} else {
 			log.Printf("💡 Check chain connection and account balance for gas")
+			reason = "send_failed"
 		}
+		// Aggregate by reason only; a per-license_id label would explode
+		// cardinality on nodes with many delegated licenses.
+		metricSubmitFailures.WithLabelValues(reason).Add(float64(len(workResults)))
 		return
 	}
 
