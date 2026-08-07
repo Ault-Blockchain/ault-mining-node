@@ -269,9 +269,31 @@ func (c *ChainClient) GetOwnerKeyInfo(ctx context.Context, ownerAddr string) (*m
 // GetOwnedLicenses queries all license IDs owned by an address (parallel with concurrency limit)
 func (c *ChainClient) GetOwnedLicenses(ctx context.Context, ownerAddr string) ([]uint64, error) {
 	// First get the balance to know how many licenses to query
-	balanceResp, err := c.licenseClient.BalanceOf(ctx, &licensetypes.QueryBalanceRequest{Owner: ownerAddr})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query license balance: %w", err)
+	var balanceResp *licensetypes.QueryBalanceResponse
+	var lastErr error
+	for range len(c.grpcEndpoints) {
+		for range rpcMaxRetries {
+			r, err := c.licenseClient.BalanceOf(ctx, &licensetypes.QueryBalanceRequest{Owner: ownerAddr})
+			if err == nil {
+				balanceResp = r
+				lastErr = nil
+				break
+			}
+			lastErr = err
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("failed to query license balance: %w", err)
+			}
+			time.Sleep(rpcRetryDelay)
+		}
+		if lastErr == nil {
+			break
+		}
+		if !c.switchToNextGRPCEndpoint() {
+			break
+		}
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("failed to query license balance: %w", lastErr)
 	}
 
 	if balanceResp.Balance == 0 {
@@ -339,15 +361,37 @@ func (c *ChainClient) GetDelegatedLicenses(ctx context.Context, operatorAddr str
 	var nextKey []byte
 
 	for {
-		resp, err := c.queryClient.DelegatedLicenses(ctx, &minertypes.QueryDelegatedLicensesRequest{
-			Operator: operatorAddr,
-			Pagination: &query.PageRequest{
-				Key:   nextKey,
-				Limit: 1000,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to query delegated licenses: %w", err)
+		var resp *minertypes.QueryDelegatedLicensesResponse
+		var lastErr error
+		for range len(c.grpcEndpoints) {
+			for range rpcMaxRetries {
+				r, err := c.queryClient.DelegatedLicenses(ctx, &minertypes.QueryDelegatedLicensesRequest{
+					Operator: operatorAddr,
+					Pagination: &query.PageRequest{
+						Key:   nextKey,
+						Limit: 1000,
+					},
+				})
+				if err == nil {
+					resp = r
+					lastErr = nil
+					break
+				}
+				lastErr = err
+				if ctx.Err() != nil {
+					return nil, fmt.Errorf("failed to query delegated licenses: %w", err)
+				}
+				time.Sleep(rpcRetryDelay)
+			}
+			if lastErr == nil {
+				break
+			}
+			if !c.switchToNextGRPCEndpoint() {
+				break
+			}
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to query delegated licenses: %w", lastErr)
 		}
 
 		allLicenses = append(allLicenses, resp.LicenseIds...)
