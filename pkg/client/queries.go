@@ -18,6 +18,30 @@ import (
 // them up automatically without hammering the query on every tx.
 const feeFreeGasLimitsTTL = 30 * time.Second
 
+// queryWithEndpointRotation retries fn on the current gRPC endpoint and
+// rotates to the next endpoint when all retries fail.
+func queryWithEndpointRotation[T any](ctx context.Context, c *ChainClient, fn func() (T, error)) (T, error) {
+	var zero T
+	var lastErr error
+	for range len(c.grpcEndpoints) {
+		for range rpcMaxRetries {
+			resp, err := fn()
+			if err == nil {
+				return resp, nil
+			}
+			lastErr = err
+			if ctx.Err() != nil {
+				return zero, err
+			}
+			time.Sleep(rpcRetryDelay)
+		}
+		if !c.switchToNextGRPCEndpoint() {
+			break
+		}
+	}
+	return zero, lastErr
+}
+
 // getFeeFreeGasLimits returns the chain's fee-free min gas settings keyed by
 // msg type URL. The result is cached for feeFreeGasLimitsTTL.
 func (c *ChainClient) getFeeFreeGasLimits(ctx context.Context) (map[string]feeFreeGasLimit, error) {
@@ -29,33 +53,11 @@ func (c *ChainClient) getFeeFreeGasLimits(ctx context.Context) (map[string]feeFr
 	}
 	c.gasLimitsMu.Unlock()
 
-	var (
-		resp    *accountxtypes.QueryFeeFreeGasLimitsResponse
-		lastErr error
-	)
-	for range len(c.grpcEndpoints) {
-		for range rpcMaxRetries {
-			r, err := c.accountxClient.FeeFreeGasLimits(ctx, &accountxtypes.QueryFeeFreeGasLimitsRequest{})
-			if err == nil {
-				resp = r
-				lastErr = nil
-				break
-			}
-			lastErr = err
-			if ctx.Err() != nil {
-				return nil, fmt.Errorf("failed to query fee-free gas limits: %w", err)
-			}
-			time.Sleep(rpcRetryDelay)
-		}
-		if lastErr == nil {
-			break
-		}
-		if !c.switchToNextGRPCEndpoint() {
-			break
-		}
-	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("failed to query fee-free gas limits: %w", lastErr)
+	resp, err := queryWithEndpointRotation(ctx, c, func() (*accountxtypes.QueryFeeFreeGasLimitsResponse, error) {
+		return c.accountxClient.FeeFreeGasLimits(ctx, &accountxtypes.QueryFeeFreeGasLimitsRequest{})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query fee-free gas limits: %w", err)
 	}
 
 	limits := make(map[string]feeFreeGasLimit, len(resp.GasLimits))
@@ -80,24 +82,13 @@ func (c *ChainClient) GetCurrentEpoch(ctx context.Context) (*minertypes.QueryEpo
 		return c.getHighestCurrentEpoch(ctx)
 	}
 
-	var lastErr error
-	for range len(c.grpcEndpoints) {
-		for range rpcMaxRetries {
-			resp, err := c.queryClient.Epoch(ctx, &minertypes.QueryEpochRequest{})
-			if err == nil {
-				return resp, nil
-			}
-			lastErr = err
-			if ctx.Err() != nil {
-				return nil, fmt.Errorf("failed to query epoch: %w", err)
-			}
-			time.Sleep(rpcRetryDelay)
-		}
-		if !c.switchToNextGRPCEndpoint() {
-			break
-		}
+	resp, err := queryWithEndpointRotation(ctx, c, func() (*minertypes.QueryEpochResponse, error) {
+		return c.queryClient.Epoch(ctx, &minertypes.QueryEpochRequest{})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query epoch: %w", err)
 	}
-	return nil, fmt.Errorf("failed to query epoch: %w", lastErr)
+	return resp, nil
 }
 
 func (c *ChainClient) getHighestCurrentEpoch(ctx context.Context) (*minertypes.QueryEpochResponse, error) {
@@ -202,74 +193,43 @@ func queryEpochWithRetries(ctx context.Context, queryClient minertypes.QueryClie
 
 // GetLicenseMinerInfo queries mining info for a license
 func (c *ChainClient) GetLicenseMinerInfo(ctx context.Context, licenseID uint64) (*minertypes.QueryLicenseMinerInfoResponse, error) {
-	var lastErr error
-	for range len(c.grpcEndpoints) {
-		for range rpcMaxRetries {
-			resp, err := c.queryClient.LicenseMinerInfo(ctx, &minertypes.QueryLicenseMinerInfoRequest{LicenseId: licenseID})
-			if err == nil {
-				return resp, nil
-			}
-			lastErr = err
-			if ctx.Err() != nil {
-				return nil, fmt.Errorf("failed to query license info: %w", err)
-			}
-			time.Sleep(rpcRetryDelay)
-		}
-		if !c.switchToNextGRPCEndpoint() {
-			break
-		}
+	resp, err := queryWithEndpointRotation(ctx, c, func() (*minertypes.QueryLicenseMinerInfoResponse, error) {
+		return c.queryClient.LicenseMinerInfo(ctx, &minertypes.QueryLicenseMinerInfoRequest{LicenseId: licenseID})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query license info: %w", err)
 	}
-	return nil, fmt.Errorf("failed to query license info: %w", lastErr)
+	return resp, nil
 }
 
 // GetParams queries the miner module parameters
 func (c *ChainClient) GetParams(ctx context.Context) (*minertypes.Params, error) {
-	var lastErr error
-	for range len(c.grpcEndpoints) {
-		for range rpcMaxRetries {
-			resp, err := c.queryClient.Params(ctx, &minertypes.QueryParamsRequest{})
-			if err == nil {
-				return &resp.Params, nil
-			}
-			lastErr = err
-			if ctx.Err() != nil {
-				return nil, fmt.Errorf("failed to query params: %w", err)
-			}
-			time.Sleep(rpcRetryDelay)
-		}
-		if !c.switchToNextGRPCEndpoint() {
-			break
-		}
+	resp, err := queryWithEndpointRotation(ctx, c, func() (*minertypes.QueryParamsResponse, error) {
+		return c.queryClient.Params(ctx, &minertypes.QueryParamsRequest{})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query params: %w", err)
 	}
-	return nil, fmt.Errorf("failed to query params: %w", lastErr)
+	return &resp.Params, nil
 }
 
 // GetOwnerKeyInfo queries the VRF key info for an owner
 func (c *ChainClient) GetOwnerKeyInfo(ctx context.Context, ownerAddr string) (*minertypes.QueryOwnerKeyResponse, error) {
-	var lastErr error
-	for range len(c.grpcEndpoints) {
-		for range rpcMaxRetries {
-			resp, err := c.queryClient.OwnerKey(ctx, &minertypes.QueryOwnerKeyRequest{Owner: ownerAddr})
-			if err == nil {
-				return resp, nil
-			}
-			lastErr = err
-			if ctx.Err() != nil {
-				return nil, fmt.Errorf("failed to query owner key info: %w", err)
-			}
-			time.Sleep(rpcRetryDelay)
-		}
-		if !c.switchToNextGRPCEndpoint() {
-			break
-		}
+	resp, err := queryWithEndpointRotation(ctx, c, func() (*minertypes.QueryOwnerKeyResponse, error) {
+		return c.queryClient.OwnerKey(ctx, &minertypes.QueryOwnerKeyRequest{Owner: ownerAddr})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query owner key info: %w", err)
 	}
-	return nil, fmt.Errorf("failed to query owner key info: %w", lastErr)
+	return resp, nil
 }
 
 // GetOwnedLicenses queries all license IDs owned by an address (parallel with concurrency limit)
 func (c *ChainClient) GetOwnedLicenses(ctx context.Context, ownerAddr string) ([]uint64, error) {
 	// First get the balance to know how many licenses to query
-	balanceResp, err := c.licenseClient.BalanceOf(ctx, &licensetypes.QueryBalanceRequest{Owner: ownerAddr})
+	balanceResp, err := queryWithEndpointRotation(ctx, c, func() (*licensetypes.QueryBalanceResponse, error) {
+		return c.licenseClient.BalanceOf(ctx, &licensetypes.QueryBalanceRequest{Owner: ownerAddr})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to query license balance: %w", err)
 	}
@@ -339,12 +299,14 @@ func (c *ChainClient) GetDelegatedLicenses(ctx context.Context, operatorAddr str
 	var nextKey []byte
 
 	for {
-		resp, err := c.queryClient.DelegatedLicenses(ctx, &minertypes.QueryDelegatedLicensesRequest{
-			Operator: operatorAddr,
-			Pagination: &query.PageRequest{
-				Key:   nextKey,
-				Limit: 1000,
-			},
+		resp, err := queryWithEndpointRotation(ctx, c, func() (*minertypes.QueryDelegatedLicensesResponse, error) {
+			return c.queryClient.DelegatedLicenses(ctx, &minertypes.QueryDelegatedLicensesRequest{
+				Operator: operatorAddr,
+				Pagination: &query.PageRequest{
+					Key:   nextKey,
+					Limit: 1000,
+				},
+			})
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to query delegated licenses: %w", err)

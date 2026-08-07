@@ -287,31 +287,11 @@ func (c *ChainClient) refreshAccountSequence(ctx context.Context, addr sdk.AccAd
 		return nil
 	}
 
-	var accRes *authtypes.QueryAccountResponse
-	var lastErr error
-	for range len(c.grpcEndpoints) {
-		for range rpcMaxRetries {
-			var err error
-			accRes, err = c.authClient.Account(ctx, &authtypes.QueryAccountRequest{Address: addr.String()})
-			if err == nil {
-				lastErr = nil
-				break
-			}
-			lastErr = err
-			if ctx.Err() != nil {
-				return fmt.Errorf("failed to query account: %w", err)
-			}
-			time.Sleep(rpcRetryDelay)
-		}
-		if lastErr == nil {
-			break
-		}
-		if !c.switchToNextGRPCEndpoint() {
-			break
-		}
-	}
-	if lastErr != nil {
-		return fmt.Errorf("failed to query account: %w", lastErr)
+	accRes, err := queryWithEndpointRotation(ctx, c, func() (*authtypes.QueryAccountResponse, error) {
+		return c.authClient.Account(ctx, &authtypes.QueryAccountRequest{Address: addr.String()})
+	})
+	if err != nil {
+		return fmt.Errorf("failed to query account: %w", err)
 	}
 	var accI sdk.AccountI
 	if err := c.interfaceRegistry.UnpackAny(accRes.Account, &accI); err != nil {
