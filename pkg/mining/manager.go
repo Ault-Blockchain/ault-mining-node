@@ -424,6 +424,12 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 			atomic.AddUint64(&m.stats.TotalSubmissions, uint64(len(workResults)))
 			log.Printf("💡 Transaction submitted but confirmation timed out - check tx status manually")
 			reason = "confirmation_timeout"
+		} else if strings.Contains(err.Error(), "sequence mismatch") {
+			// Expected when several nodes share one key (HA): they sign against the
+			// same account sequence and all but one lose the race. Kept out of
+			// send_failed so that reason stays a genuine fault signal.
+			log.Printf("💡 Account sequence contention - another node may be signing with the same key")
+			reason = "sequence_mismatch"
 		} else {
 			log.Printf("💡 Check chain connection and account balance for gas")
 			reason = "send_failed"
