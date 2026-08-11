@@ -430,6 +430,9 @@ func (m *MinerManager) submitBatchWork(ctx context.Context, workResults []minert
 			// send_failed so that reason stays a genuine fault signal.
 			log.Printf("💡 Account sequence contention - another node may be signing with the same key")
 			reason = "sequence_mismatch"
+		} else if strings.Contains(err.Error(), "epoch outside submission window") {
+			log.Printf("⏱️  Submission window already closed for target epoch - check broadcast latency and window params")
+			reason = "epoch_out_of_window"
 		} else {
 			log.Printf("💡 Check chain connection and account balance for gas")
 			reason = "send_failed"
