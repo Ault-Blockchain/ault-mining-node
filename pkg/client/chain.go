@@ -590,6 +590,14 @@ func isDuplicateTx(raw string) bool {
 	return strings.Contains(s, "already in cache") || strings.Contains(s, "already exists") || strings.Contains(s, "duplicate")
 }
 
+// isChainDuplicateSubmission matches x/miner's ErrDuplicateSubmission — a
+// permanent chain rejection where the credit is already recorded. Distinct
+// from isDuplicateTx, which matches CometBFT mempool duplicates that should
+// wait for confirmation.
+func isChainDuplicateSubmission(raw string) bool {
+	return strings.Contains(raw, "duplicate work submission")
+}
+
 func isOutOfGas(raw string) bool {
 	s := strings.ToLower(raw)
 	return strings.Contains(s, "out of gas") || strings.Contains(s, "insufficient gas")

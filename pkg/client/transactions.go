@@ -234,12 +234,17 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 
 				raw := resp.TxResponse.RawLog
 				if expected, got, ok := parseSequenceMismatch(raw); ok {
+					// HA peers sharing this key keep advancing chain seq faster
+					// than we retry; bail out before we burn the submission window.
 					c.nextSeq = expected
-					lastErr = fmt.Errorf("sequence mismatch (expected %d, got %d)", expected, got)
+					return "", fmt.Errorf("sequence mismatch (expected %d, got %d)", expected, got)
 				} else if isOutOfGas(raw) {
 					gasLimit = uint64(float64(estGas)*1.3 + 0.9999)
 					log.Printf("out of gas reported; increasing gas to %d and retrying", gasLimit)
 					lastErr = fmt.Errorf("out of gas, retrying with higher limit")
+				} else if isChainDuplicateSubmission(raw) {
+					// Credit already recorded on-chain (HA peer beat us); resigning cannot undo it.
+					return "", fmt.Errorf("tx failed code=%d: %s", resp.TxResponse.Code, raw)
 				} else if isDuplicateTx(raw) {
 					txHash = resp.TxResponse.TxHash
 					if txHash == "" {
