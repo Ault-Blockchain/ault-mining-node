@@ -28,8 +28,19 @@ RUN --mount=type=secret,id=GH_PAT \
 # Copy source code
 COPY . .
 
+# Version info stamped into the binary
+ARG VERSION=dev
+ARG COMMIT=""
+ARG DATE=""
+
 # Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o /build/aultmined ./cmd
+RUN VERSION_PKG=github.com/Ault-Blockchain/ault-miner-node/internal/version && \
+    CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags="-s -w \
+      -X ${VERSION_PKG}.Version=${VERSION} \
+      -X ${VERSION_PKG}.Commit=${COMMIT} \
+      -X ${VERSION_PKG}.Date=${DATE}" \
+    -o /build/aultmined ./cmd
 
 # Final stage
 FROM alpine:latest
