@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/Ault-Blockchain/ault-miner-node/api"
 	"github.com/Ault-Blockchain/ault-miner-node/internal/config"
 	"github.com/Ault-Blockchain/ault-miner-node/internal/storage"
+	"github.com/Ault-Blockchain/ault-miner-node/internal/version"
 	"github.com/Ault-Blockchain/ault-miner-node/pkg/client"
 	"github.com/Ault-Blockchain/ault-miner-node/pkg/mining"
 	appcfg "github.com/Ault-Blockchain/ault/v2/app/config"
@@ -31,9 +33,10 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "aultmined",
-	Short: "Ault mining client",
-	Long:  `A mining client for the Ault x/miner module that performs VRF-based mining with micro proof-of-work.`,
+	Use:     "aultmined",
+	Short:   "Ault mining client",
+	Long:    `A mining client for the Ault x/miner module that performs VRF-based mining with micro proof-of-work.`,
+	Version: version.String(),
 }
 
 func init() {
@@ -44,12 +47,16 @@ func init() {
 	appcfg.SetBech32Prefixes(sdkConfig)
 	sdkConfig.Seal()
 
+	// cobra auto-registers `--version`/`-v` on the root command.
+	rootCmd.SetVersionTemplate("aultmined {{.Version}}\n")
+
 	// Add subcommands
 	rootCmd.AddCommand(
 		keygenCmd(),
 		vrfKeygenCmd(),
 		setKeyCmd(),
 		mineCmd(),
+		versionCmd(),
 	)
 }
 
@@ -249,12 +256,55 @@ func getVRFPubKeyHex(vrfKeyHex string) string {
 	return hex.EncodeToString(vrfPubKey.Bytes())
 }
 
+func versionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Long:  `Print the version, git commit and build date of this miner client binary.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			short, _ := cmd.Flags().GetBool("short")
+			if short {
+				fmt.Println(version.Version)
+				return nil
+			}
+
+			info := version.Get()
+			if jsonOut, _ := cmd.Flags().GetBool("json"); jsonOut {
+				out, err := json.MarshalIndent(info, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(out))
+				return nil
+			}
+
+			fmt.Printf("aultmined:  %s\n", info.Version)
+			if info.Commit != "" {
+				fmt.Printf("commit:     %s\n", info.Commit)
+			}
+			if info.BuildDate != "" {
+				fmt.Printf("build date: %s\n", info.BuildDate)
+			}
+			fmt.Printf("go:         %s\n", info.GoVersion)
+			fmt.Printf("platform:   %s\n", info.Platform)
+			return nil
+		},
+	}
+
+	cmd.Flags().Bool("short", false, "Print only the version string")
+	cmd.Flags().Bool("json", false, "Print version information as JSON")
+
+	return cmd
+}
+
 func mineCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mine",
 		Short: "Start mining with auto-detected licenses",
 		Long:  `Start the mining client. Automatically detects owned licenses and mines using the owner's VRF key.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			log.Printf("aultmined %s", version.String())
+
 			continuous, _ := cmd.Flags().GetBool("continuous")
 			cfg := config.Get()
 

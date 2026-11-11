@@ -7,6 +7,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/Ault-Blockchain/ault-miner-node/internal/version"
 )
 
 type Server struct {
@@ -25,11 +27,16 @@ func (s *Server) mountRoutes() {
 	// Prometheus metrics endpoint
 	s.app.Get("/metrics", fiberadaptor.HTTPHandler(promhttp.Handler()))
 
+	// Build version of the running binary
+	s.app.Get("/version", func(c *fiber.Ctx) error {
+		return c.JSON(version.Get())
+	})
+
 	// Health check (chain status)
 	s.app.Get("/health", func(c *fiber.Ctx) error {
 		cr := checkRpc(c.Context())
 		ok := cr.OK
-		out := fiber.Map{"ok": ok, "chain": cr.OK}
+		out := fiber.Map{"ok": ok, "chain": cr.OK, "version": version.Version}
 		if cr.Epoch > 0 {
 			out["epoch"] = cr.Epoch
 		}
