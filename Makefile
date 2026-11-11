@@ -1,4 +1,4 @@
-.PHONY: all build install clean test run docker-build docker-run help
+.PHONY: all build install clean test run docker-build docker-run version help
 
 # Binary name
 BINARY_NAME=aultmined
@@ -11,8 +11,17 @@ GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOMOD=$(GOCMD) mod
 
+# Version info (override with: make build VERSION=v1.2.3)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null)
+DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_PKG=github.com/Ault-Blockchain/ault-miner-node/internal/version
+
 # Build flags
-LDFLAGS=-ldflags "-s -w"
+LDFLAGS=-ldflags "-s -w \
+	-X $(VERSION_PKG).Version=$(VERSION) \
+	-X $(VERSION_PKG).Commit=$(COMMIT) \
+	-X $(VERSION_PKG).Date=$(DATE)"
 BUILD_FLAGS=-trimpath
 
 # Default target
@@ -27,7 +36,7 @@ help:
 
 ## build: Build the miner binary
 build:
-	@echo "Building $(BINARY_NAME)..."
+	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	$(GOBUILD) $(BUILD_FLAGS) $(LDFLAGS) -o $(BINARY_NAME) ./cmd
 
 ## install: Install the miner binary to $GOPATH/bin
@@ -35,6 +44,10 @@ install: build
 	@echo "Installing $(BINARY_NAME) to $$(go env GOPATH)/bin..."
 	@mkdir -p $$(go env GOPATH)/bin
 	@mv $(BINARY_NAME) $$(go env GOPATH)/bin/
+
+## version: Print the version that would be stamped into the binary
+version:
+	@echo "$(VERSION) ($(COMMIT)) $(DATE)"
 
 ## clean: Remove build artifacts
 clean:
