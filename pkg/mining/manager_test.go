@@ -26,7 +26,9 @@ import (
 func TestMain(m *testing.M) {
 	// Set up environment for tests
 	os.Setenv("CHAIN_ID", "cosmos_262144-1")
-	config.Load()
+	if err := config.Load(); err != nil {
+		panic(err)
+	}
 	os.Exit(m.Run())
 }
 

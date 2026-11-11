@@ -68,6 +68,7 @@ See **[Fly.io Deployment Guide](docs/FLY_DEPLOYMENT.md)**.
 | `MINER_OPERATOR_KEY` | No\*     | -                       | -                                           | Account private key (hex, secp256k1)   |
 | `MINER_VRF_KEY`      | No\*     | -                       | -                                           | VRF private key (hex, Ed25519)         |
 | `CHAIN_GRPC`         | No       | `localhost:9090`        | `test-grpc.cloud.aultblockchain.xyz:9090`   | gRPC endpoint(s), comma-separated for fallback |
+| `CHAIN_GRPC_TLS`     | No       | `auto`                  | `auto`                                      | gRPC transport: `auto` (try TLS, fall back to plaintext), `true` (force TLS), `false` (force plaintext) |
 | `CHAIN_RPC`          | No       | `tcp://localhost:26657` | `https://test-rpc.cloud.aultblockchain.xyz` | RPC endpoint(s), comma-separated for fallback  |
 | `CHAIN_ID`           | No       | `ault_20904-1`          | `ault_10904-1`                              | Chain identifier                       |
 | `MINER_API_PORT`     | No       | `8080`                  | -                                           | REST API port                          |

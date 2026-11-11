@@ -45,8 +45,9 @@ import (
 
 const (
 	rpcMaxRetries = 3
-	rpcRetryDelay = 500 * time.Millisecond
 )
+
+var rpcRetryDelay = 500 * time.Millisecond
 
 // NewChainClient creates a new chain client with connection management.
 // It reads the operator key from the MINER_OPERATOR_KEY environment variable.
@@ -65,6 +66,7 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	grpcTransports := transportChoicesForMode(cfg.GRPCTLSMode)
 	rpcEndpoints, err := parseRPCEndpoints(cfg.RPCEndpoint)
 	if err != nil {
 		return nil, err
@@ -99,7 +101,9 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 	// Tx config for building/signing transactions
 	txCfg := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
 
-	conn, err := newGRPCConn(grpcEndpoints[0], protoCodec)
+	log.Printf("gRPC primary endpoint %s (tls=%v); %d endpoint(s), %d transport candidate(s)",
+		grpcEndpoints[0].endpoint, grpcTransports[0], len(grpcEndpoints), len(grpcEndpoints)*len(grpcTransports))
+	conn, err := newGRPCConn(grpcEndpoints[0], grpcTransports[0], protoCodec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to gRPC: %w", err)
 	}
@@ -112,6 +116,7 @@ func NewChainClientWithKey(operatorKeyHex string) (*ChainClient, error) {
 		txClient:          txtypes.NewServiceClient(conn),
 		feemarketClient:   feemarkettypes.NewQueryClient(conn),
 		grpcEndpoints:     grpcEndpoints,
+		grpcTransports:    grpcTransports,
 		rpcEndpoints:      rpcEndpoints,
 		chainID:           cfg.ChainID,
 		gasPrices:         gasPrices,
@@ -272,7 +277,7 @@ func (c *ChainClient) refreshAccountSequence(ctx context.Context, addr sdk.AccAd
 
 	var accRes *authtypes.QueryAccountResponse
 	var lastErr error
-	for range len(c.grpcEndpoints) {
+	for range c.grpcCandidateCount() {
 		for range rpcMaxRetries {
 			var err error
 			accRes, err = c.authClient.Account(ctx, &authtypes.QueryAccountRequest{Address: addr.String()})
@@ -457,21 +462,22 @@ var (
 
 type grpcEndpointConfig struct {
 	endpoint   string
-	useTLS     bool
 	serverName string
 }
 
-func newGRPCConn(endpoint grpcEndpointConfig, protoCodec *codec.ProtoCodec) (*grpc.ClientConn, error) {
-	var transportCreds credentials.TransportCredentials
-	if endpoint.useTLS {
-		transportCreds = credentials.NewTLS(&tls.Config{ServerName: endpoint.serverName})
-	} else {
-		transportCreds = insecure.NewCredentials()
+// transportCredentials returns the gRPC transport credentials for an endpoint:
+// TLS (using serverName for SNI/verification) when useTLS is set, otherwise plaintext.
+func transportCredentials(endpoint grpcEndpointConfig, useTLS bool) credentials.TransportCredentials {
+	if useTLS {
+		return credentials.NewTLS(&tls.Config{ServerName: endpoint.serverName})
 	}
+	return insecure.NewCredentials()
+}
 
+func newGRPCConn(endpoint grpcEndpointConfig, useTLS bool, protoCodec *codec.ProtoCodec) (*grpc.ClientConn, error) {
 	return grpc.NewClient(
 		endpoint.endpoint,
-		grpc.WithTransportCredentials(transportCreds),
+		grpc.WithTransportCredentials(transportCredentials(endpoint, useTLS)),
 		grpc.WithDefaultCallOptions(
 			grpc.ForceCodec(protoCodec.GRPCCodec()),
 			grpc.MaxCallRecvMsgSize(10*1024*1024),
@@ -493,11 +499,16 @@ func newGRPCConn(endpoint grpcEndpointConfig, protoCodec *codec.ProtoCodec) (*gr
 	)
 }
 
+func (c *ChainClient) grpcCandidateCount() int {
+	return len(c.grpcEndpoints) * len(c.grpcTransports)
+}
+
 func (c *ChainClient) switchToNextGRPCEndpoint() bool {
 	c.endpointMu.Lock()
 	defer c.endpointMu.Unlock()
 
-	if len(c.grpcEndpoints) <= 1 {
+	candidateCount := c.grpcCandidateCount()
+	if candidateCount <= 1 {
 		return false
 	}
 
@@ -508,9 +519,13 @@ func (c *ChainClient) switchToNextGRPCEndpoint() bool {
 	}
 
 	var lastErr error
-	for offset := 1; offset < len(c.grpcEndpoints); offset++ {
-		next := c.grpcEndpoints[offset]
-		conn, err := newGRPCConn(next, protoCodec)
+	for offset := 1; offset < candidateCount; offset++ {
+		nextCandidate := (c.transportIx + offset) % candidateCount
+		endpointOffset := nextCandidate / len(c.grpcTransports)
+		transportIx := nextCandidate % len(c.grpcTransports)
+		next := c.grpcEndpoints[endpointOffset]
+		useTLS := c.grpcTransports[transportIx]
+		conn, err := newGRPCConn(next, useTLS, protoCodec)
 		if err != nil {
 			lastErr = err
 			continue
@@ -518,14 +533,18 @@ func (c *ChainClient) switchToNextGRPCEndpoint() bool {
 
 		oldConn := c.grpcConn
 		oldEndpoint := c.grpcEndpoints[0].endpoint
+		oldTLS := c.grpcTransports[c.transportIx]
 		c.grpcConn = conn
 		c.queryClient = minertypes.NewQueryClient(conn)
 		c.licenseClient = licensetypes.NewQueryClient(conn)
 		c.authClient = authtypes.NewQueryClient(conn)
 		c.txClient = txtypes.NewServiceClient(conn)
 		c.feemarketClient = feemarkettypes.NewQueryClient(conn)
-		c.grpcEndpoints = append(c.grpcEndpoints[offset:], c.grpcEndpoints[:offset]...)
-		log.Printf("switching gRPC endpoint from %s to %s", oldEndpoint, next.endpoint)
+		if endpointOffset > 0 {
+			c.grpcEndpoints = append(c.grpcEndpoints[endpointOffset:], c.grpcEndpoints[:endpointOffset]...)
+		}
+		c.transportIx = transportIx
+		log.Printf("switching gRPC endpoint from %s (tls=%v) to %s (tls=%v)", oldEndpoint, oldTLS, next.endpoint, useTLS)
 		if oldConn != nil {
 			_ = oldConn.Close()
 		}
@@ -567,24 +586,33 @@ func isOutOfGas(raw string) bool {
 	return strings.Contains(s, "out of gas") || strings.Contains(s, "insufficient gas")
 }
 
+// parseGRPCEndpoints parses the comma-separated CHAIN_GRPC list into real
+// endpoints. Transport fallback is handled separately by transportChoicesForMode.
 func parseGRPCEndpoints(raw string) ([]grpcEndpointConfig, error) {
 	parts := splitEndpointList(raw)
 	endpoints := make([]grpcEndpointConfig, 0, len(parts))
 	for _, part := range parts {
-		endpoint, useTLS, serverName, err := normalizeGRPCEndpoint(part)
+		endpoint, serverName, err := normalizeGRPCEndpoint(part)
 		if err != nil {
 			return nil, err
 		}
-		endpoints = append(endpoints, grpcEndpointConfig{
-			endpoint:   endpoint,
-			useTLS:     useTLS,
-			serverName: serverName,
-		})
+		endpoints = append(endpoints, grpcEndpointConfig{endpoint: endpoint, serverName: serverName})
 	}
 	if len(endpoints) == 0 {
 		return nil, fmt.Errorf("gRPC endpoint is empty")
 	}
 	return endpoints, nil
+}
+
+func transportChoicesForMode(mode config.GRPCTLSMode) []bool {
+	switch mode {
+	case config.GRPCTLSModeForceTLS:
+		return []bool{true}
+	case config.GRPCTLSModePlaintext:
+		return []bool{false}
+	default:
+		return []bool{true, false}
+	}
 }
 
 func parseRPCEndpoints(raw string) ([]string, error) {
@@ -611,15 +639,49 @@ func splitEndpointList(raw string) []string {
 	return endpoints
 }
 
-// normalizeGRPCEndpoint parses a CHAIN_GRPC entry and returns host:port plus TLS hints.
-func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName string, err error) {
+// CheckGRPCEpoch dials each configured gRPC endpoint candidate (honoring
+// CHAIN_GRPC_TLS: TLS-first then plaintext in auto mode) and returns the current
+// epoch from the first candidate that responds. It opens short-lived connections
+// that are closed before returning and is intended for health checks.
+func CheckGRPCEpoch(ctx context.Context, perTry time.Duration) (uint64, error) {
+	cfg := config.Get()
+	endpoints, err := parseGRPCEndpoints(cfg.GRPCEndpoint)
+	if err != nil {
+		return 0, err
+	}
+	transports := transportChoicesForMode(cfg.GRPCTLSMode)
+	var lastErr error
+	for _, ep := range endpoints {
+		for _, useTLS := range transports {
+			conn, derr := grpc.NewClient(ep.endpoint, grpc.WithTransportCredentials(transportCredentials(ep, useTLS)))
+			if derr != nil {
+				lastErr = derr
+				continue
+			}
+			cctx, cancel := context.WithTimeout(ctx, perTry)
+			resp, qerr := minertypes.NewQueryClient(conn).Epoch(cctx, &minertypes.QueryEpochRequest{})
+			cancel()
+			_ = conn.Close()
+			if qerr != nil {
+				lastErr = qerr
+				continue
+			}
+			return resp.Epoch, nil
+		}
+	}
+	return 0, lastErr
+}
+
+// normalizeGRPCEndpoint parses a single CHAIN_GRPC entry and returns host:port
+// plus the server name to use for TLS SNI/verification.
+func normalizeGRPCEndpoint(raw string) (endpoint string, serverName string, err error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", false, "", fmt.Errorf("gRPC endpoint is empty")
+		return "", "", fmt.Errorf("gRPC endpoint is empty")
 	}
 
 	if strings.Contains(raw, "://") {
-		return "", false, "", fmt.Errorf("invalid CHAIN_GRPC: use host[:port] without scheme (e.g. test-grpc.cloud.aultblockchain.xyz)")
+		return "", "", fmt.Errorf("invalid CHAIN_GRPC: use host[:port] without scheme (e.g. test-grpc.cloud.aultblockchain.xyz)")
 	}
 
 	endpoint = raw
@@ -630,5 +692,5 @@ func normalizeGRPCEndpoint(raw string) (endpoint string, useTLS bool, serverName
 	if h, _, err := net.SplitHostPort(endpoint); err == nil {
 		serverName = h
 	}
-	return endpoint, false, serverName, nil
+	return endpoint, serverName, nil
 }

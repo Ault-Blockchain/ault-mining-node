@@ -133,7 +133,7 @@ func (c *ChainClient) buildSignAndBroadcast(ctx context.Context, fromAddr sdk.Ac
 		lastErr error
 	)
 
-	for endpointAttempt := 0; endpointAttempt < len(c.grpcEndpoints); endpointAttempt++ {
+	for endpointAttempt := 0; endpointAttempt < c.grpcCandidateCount(); endpointAttempt++ {
 		for attempt := 0; attempt <= txMaxRetries; attempt++ {
 			// Check free gas eligibility FIRST with original gas limit
 			// This must be done before gas adjustment to stay within FreeMiningMaxGasLimit
