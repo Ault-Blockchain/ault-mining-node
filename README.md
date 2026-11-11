@@ -8,7 +8,7 @@ A production-ready mining client for the Ault blockchain. Uses VRF-based mining 
 - **Multi-License Support**: Mine with multiple licenses (owned or delegated)
 - **VRF-Based Mining**: Secure random number generation for fair mining
 - **Auto-Detection**: Automatically detects owned and delegated licenses
-- **REST API**: Built-in health check endpoint
+- **REST API**: Built-in health check and version endpoints
 
 ## Quick Start
 
@@ -60,6 +60,8 @@ See **[Fly.io Deployment Guide](docs/FLY_DEPLOYMENT.md)**.
 | `aultmined set-key`    | Register VRF public key on-chain         |
 | `aultmined mine`       | Start mining with all detected licenses  |
 | `aultmined mine --yes` | Start mining without confirmation prompt |
+| `aultmined version`    | Print version, commit and build date     |
+| `aultmined --version`  | Print version (short form, `-v`)         |
 
 ## Environment Variables
 
